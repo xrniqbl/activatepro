@@ -26,6 +26,7 @@ require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const dbi = require('./db');
+const features = require('./features');
 const crypto = require('crypto');
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
 if (!process.env.JWT_SECRET) console.warn('JWT_SECRET not set — using an insecure dev secret. Set JWT_SECRET in production.');
@@ -415,6 +416,9 @@ app.post('/api/orders', authRequired, (req, res) => {
     user_id: req.user.uid, device: b.device, service: b.service, imei: b.imei,
     amount: parseInt(b.amount, 10) || 0, eta: b.eta || 'Queued', status: b.status || 'Pending',
   });
+  features.logActivity({ actor: req.user.email, action: 'placed', target: 'order ' + order.id, level: 'success', ip: features.clientIp(req) });
+  features.pushNotification(req.user.uid, 'package', 'Order ' + order.id + ' placed', (order.service || '') + ' · ' + (order.device || ''));
+  features.emitWebhook(req.user.uid, 'order.created', { order_id: order.id, service: order.service, device: order.device, amount: order.amount, status: order.status });
   return res.json({ ok: true, order });
 });
 app.get('/api/orders', authRequired, (req, res) => {
@@ -456,7 +460,17 @@ app.post('/api/payments/midtrans/notify', (req, res) => {
   if (n.order_id && status) {
     const fraud = n.fraud_status;
     const map = { settlement: 'Processing', capture: (fraud === 'accept' ? 'Processing' : 'Pending'), pending: 'Pending', deny: 'Failed', cancel: 'Failed', expire: 'Failed', refund: 'Failed' };
-    dbi.setOrderStatus(n.order_id, map[status] || 'Pending', n.transaction_id);
+    const newStatus = map[status] || 'Pending';
+    dbi.setOrderStatus(n.order_id, newStatus, n.transaction_id);
+    const ord = dbi.getOrder(n.order_id);
+    if (ord && (status === 'settlement' || (status === 'capture' && fraud === 'accept'))) {
+      try {
+        const num = 'INV-' + String(2049 + features.db_invoiceCount()).padStart(4, '0');
+        features.createInvoice(ord.user_id, num, ord.amount);
+      } catch (e) { /* invoice optional */ }
+      features.pushNotification(ord.user_id, 'card', 'Payment received', 'Order ' + ord.id + ' paid.');
+      features.emitWebhook(ord.user_id, 'payment.succeeded', { order_id: ord.id, gross_amount: n.gross_amount });
+    }
   }
   return res.json({ ok: true });
 });
@@ -562,8 +576,18 @@ app.patch('/api/admin/orders/:id', authRequired, adminRequired, (req, res) => {
   const status = String((req.body && req.body.status) || '').trim();
   if (!status) return res.status(400).json({ error: 'status is required' });
   dbi.setOrderStatus(req.params.id, status, null);
+  const ord = dbi.getOrder(req.params.id);
+  if (ord) {
+    features.logActivity({ actor: req.user.email, action: status === 'Completed' ? 'completed' : 'updated', target: 'order ' + ord.id, level: status === 'Failed' ? 'danger' : 'success', ip: features.clientIp(req) });
+    features.pushNotification(ord.user_id, status === 'Completed' ? 'checkCircle' : 'truck', 'Order ' + ord.id + ' ' + status.toLowerCase(), (ord.service || '') + ' status updated.');
+    const ev = status === 'Completed' ? 'order.completed' : (status === 'Failed' ? 'order.failed' : 'order.updated');
+    features.emitWebhook(ord.user_id, ev, { order_id: ord.id, status });
+  }
   return res.json({ ok: true });
 });
+
+// Mount all extra feature endpoints (support, pricing, keys, webhooks, billing, etc.)
+features.mount(app, { authRequired, adminRequired });
 
 app.get('/health', (_req, res) => res.json({ ok: true, provider: PROVIDER }));
 

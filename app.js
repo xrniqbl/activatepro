@@ -38,7 +38,23 @@ async function apiPost(path, body) {
   return data;
 }
 
-// Session token (JWT) helpers
+// Pull safe runtime config (Midtrans CLIENT key, flags) from the backend so the
+// browser never needs the key hardcoded. No-op in offline mode.
+async function loadConfig() {
+  if (!CONFIG.apiBase) return;
+  try {
+    const base = (CONFIG.apiBase || '').replace(/\/$/, '');
+    const r = await fetch(base + '/api/config');
+    if (!r.ok) return;
+    const c = await r.json();
+    if (c && typeof c === 'object') {
+      if (c.midtransClientKey) CONFIG.midtransClientKey = c.midtransClientKey;
+      if (typeof c.midtransProduction === 'boolean') CONFIG.midtransProduction = c.midtransProduction;
+      CONFIG.paymentsEnabled = !!c.paymentsEnabled;
+      CONFIG.imeiProvider = c.imeiProvider || CONFIG.imeiProvider;
+    }
+  } catch (e) { /* offline / backend not reachable — stay in demo mode */ }
+}
 function getToken() { try { return localStorage.getItem('ap-token') || ''; } catch (e) { return ''; } }
 function setToken(t) { try { t ? localStorage.setItem('ap-token', t) : localStorage.removeItem('ap-token'); } catch (e) {} }
 function logout() { setToken(''); AUTH.email = ''; try { localStorage.removeItem(DEMO_USER_KEY); } catch (e) {} }
@@ -590,7 +606,7 @@ window.addEventListener('hashchange', function () {
   const p = ((location.hash || '#/').slice(1).split('#')[0]) || '/';
   if (p !== _route) { _route = p; render(); }
 });
-window.addEventListener('DOMContentLoaded', () => { seedStore(); loadDemoUser(); render(); loadMe(); });
+window.addEventListener('DOMContentLoaded', () => { seedStore(); loadDemoUser(); loadConfig().finally(render); loadMe(); });
 
 function el(html) { const t = document.createElement('div'); t.innerHTML = html.trim(); return t.firstElementChild; }
 
@@ -1864,8 +1880,51 @@ ROUTES['/support']._after = function () {
   const tickets = ROUTES['/support']._tickets || [];
   const kb = ROUTES['/support']._kb || [];
 
+  const online = CONFIG.apiBase && getToken();
+
+  // Backend-backed ticket open: real thread + real replies.
+  function openTicketBackend(id, status, tone, subj, order) {
+    apiAuthed('/api/tickets/' + encodeURIComponent(id)).then(d => {
+      const t = d.ticket || {}; const msgs = t.msgs || [];
+      const thread = msgs.map(m => m.sender === 'them'
+        ? `<div style="display:flex;gap:8px"><span class="avatar" style="width:28px;height:28px;font-size:11px;background:var(--primary)">${I.headset(14)}</span><div class="chat-bubble them">${(m.body||'').replace(/</g,'&lt;')}</div></div>`
+        : `<div style="display:flex;justify-content:flex-end"><div class="chat-bubble me">${(m.body||'').replace(/</g,'&lt;')}</div></div>`).join('');
+      openModal('Ticket ' + (t.id||id), `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="badge badge-${t.tone||tone||'warning'}">${t.status||status||'Open'}</span><span class="muted" style="font-size:12.5px">Order ${t.order_ref||order||'\u2014'}</span></div>
+        <div style="font-weight:600;font-size:15px;margin-bottom:14px">${(t.subject||subj||'').replace(/</g,'&lt;')}</div>
+        <div class="modal-thread" style="display:flex;flex-direction:column;gap:12px;max-height:320px;overflow-y:auto;padding:4px 2px 12px">${thread}</div>
+        <div style="display:flex;gap:8px;border-top:1px solid var(--border);padding-top:12px">
+          <input class="input" id="tkReply" placeholder="Write a reply\u2026"><button class="btn btn-primary btn-icon" id="tkSend">${I.send(18)}</button>
+        </div>`);
+      const send = () => {
+        const inp = $('#tkReply'); const v = (inp.value||'').trim(); if (!v) return;
+        const wrap = document.querySelector('.modal-thread');
+        wrap.insertAdjacentHTML('beforeend', `<div style="display:flex;justify-content:flex-end"><div class="chat-bubble me">${v.replace(/</g,'&lt;')}</div></div>`);
+        inp.value=''; wrap.scrollTop = wrap.scrollHeight;
+        apiAuthed('/api/tickets/' + encodeURIComponent(id) + '/messages', { method:'POST', body:{ body:v } }).then(r => {
+          wrap.insertAdjacentHTML('beforeend', `<div style="display:flex;gap:8px"><span class="avatar" style="width:28px;height:28px;font-size:11px;background:var(--primary)">${I.headset(14)}</span><div class="chat-bubble them">${(r.reply||'').replace(/</g,'&lt;')}</div></div>`);
+          wrap.scrollTop = wrap.scrollHeight;
+        }).catch(err => toast(err.message,'alert'));
+      };
+      const sbn = $('#tkSend'); if (sbn) sbn.addEventListener('click', send);
+      const ri = $('#tkReply'); if (ri) ri.addEventListener('keydown', e => { if (e.key==='Enter') send(); });
+    }).catch(err => toast(err.message,'alert'));
+  }
+
+  function refreshTicketsBackend() {
+    apiAuthed('/api/tickets').then(d => {
+      const list = $('#ticketList'); if (!list) return;
+      const ts = d.tickets || [];
+      list.innerHTML = ts.map(t => `<div class="card card-hover" data-ticket-id="${t.id}" data-status="${t.status}" data-tone="${t.tone}" data-subj="${(t.subject||'').replace(/"/g,'&quot;')}" data-order="${t.order_ref||'\u2014'}" style="box-shadow:none;border-color:var(--border);padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer">
+        <div style="flex:1"><div style="display:flex;align-items:center;gap:8px"><span class="cell-mono" style="font-weight:600;color:var(--primary)">${t.id}</span><span class="badge badge-${t.tone}" style="font-size:11px">${t.status}</span></div><div style="font-size:13.5px;font-weight:500;margin-top:4px">${(t.subject||'').replace(/</g,'&lt;')}</div></div>
+        <div style="text-align:right">${I.chevronRight(16)}</div></div>`).join('') || '<div class="muted" style="padding:14px;text-align:center;font-size:13px">No tickets yet \u2014 open one above.</div>';
+      $$('#ticketList [data-ticket-id]').forEach(card => card.addEventListener('click', () => openTicketBackend(card.dataset.ticketId, card.dataset.status, card.dataset.tone, card.dataset.subj, card.dataset.order)));
+    }).catch(() => {});
+  }
+  if (online) refreshTicketsBackend();
+
   // Open a ticket conversation in a modal.
-  $$('[data-ticket]').forEach(card => card.addEventListener('click', () => {
+  if (!online) $$('[data-ticket]').forEach(card => card.addEventListener('click', () => {
     const t = tickets[+card.dataset.ticket]; if (!t) return;
     const thread = t.msgs.map(m => m[0] === 'them'
       ? `<div style="display:flex;gap:8px"><span class="avatar" style="width:28px;height:28px;font-size:11px;background:var(--primary)">${I.headset(14)}</span><div class="chat-bubble them">${m[1]}</div></div>`
@@ -1930,6 +1989,15 @@ ROUTES['/support']._after = function () {
     if (f) f.addEventListener('submit', e => {
       e.preventDefault();
       const subj = f.subj.value.trim() || 'New support request';
+      const category = f.cat ? f.cat.value : 'Other';
+      const order = f.order ? f.order.value.trim() : '';
+      const msg = f.msg ? f.msg.value.trim() : '';
+      if (online) {
+        apiAuthed('/api/tickets', { method: 'POST', body: { subject: subj, category, order, message: msg } })
+          .then(r => { toast('Ticket ' + (r.ticket && r.ticket.id || '') + ' created'); closeModal(); refreshTicketsBackend(); })
+          .catch(err => toast(err.message, 'alert'));
+        return;
+      }
       const newId = '#' + (4822 + Math.floor(Math.random() * 50));
       const list = $('#ticketList');
       if (list) list.insertAdjacentHTML('afterbegin', `<div class="card" style="box-shadow:none;border-color:var(--border);padding:14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="display:flex;align-items:center;gap:8px"><span class="cell-mono" style="font-weight:600;color:var(--primary)">${newId}</span><span class="badge badge-warning" style="font-size:11px">Open</span></div><div style="font-size:13.5px;font-weight:500;margin-top:4px">${subj.replace(/</g, '&lt;')}</div></div><div style="text-align:right"><div class="muted" style="font-size:11.5px">just now</div>${I.chevronRight(16)}</div></div>`);
@@ -2093,35 +2161,66 @@ ROUTES['/admin/users']._after = function () {
   }).catch(()=>{});
 };
 
-/* ---- Admin: Pricing management ---- */
+/* ---- Admin: Pricing management (connected to backend) ---- */
 route('/admin/pricing', function () {
-  const rupInput = v => `<div class="input-group" style="width:160px;margin-left:auto"><span class="input-icon" style="font-weight:600;font-size:12px;color:var(--muted-foreground)">Rp</span><input class="input cell-mono" value="${v.toLocaleString('id-ID')}" style="height:36px;text-align:right;padding-left:38px"></div>`;
-  const priceCard = (num, title, sub, rows, col) => `<div class="card" style="margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border);gap:12px;flex-wrap:wrap"><div><h3 style="font-size:16px">${num}. ${title}</h3>${sub ? `<p class="muted" style="font-size:12.5px;margin-top:2px">${sub}</p>` : ''}</div><button class="btn btn-soft btn-sm" data-toast="${title} — pricing saved">Save changes</button></div>
+  const rupInput = (v, label) => `<div class="input-group" style="width:160px;margin-left:auto"><span class="input-icon" style="font-weight:600;font-size:12px;color:var(--muted-foreground)">Rp</span><input class="input cell-mono" data-price data-label="${String(label).replace(/"/g, '&quot;')}" value="${v.toLocaleString('id-ID')}" style="height:36px;text-align:right;padding-left:38px"></div>`;
+  const priceCard = (num, key, title, sub, rows, col) => `<div class="card" data-pcard="${key}" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border);gap:12px;flex-wrap:wrap"><div><h3 style="font-size:16px">${num}. ${title}</h3>${sub ? `<p class="muted" style="font-size:12.5px;margin-top:2px">${sub}</p>` : ''}</div><button class="btn btn-soft btn-sm" data-psave="${key}">Save changes</button></div>
     <div class="table-wrapper"><table class="data"><thead><tr><th>${col}</th><th style="text-align:right">Harga (IDR)</th></tr></thead><tbody>
-      ${rows.map(r => `<tr><td style="font-weight:500">${r[0]}</td><td>${rupInput(r[1])}</td></tr>`).join('')}
+      ${rows.map(r => `<tr><td style="font-weight:500">${r[0]}</td><td>${rupInput(r[1], r[0])}</td></tr>`).join('')}
     </tbody></table></div></div>`;
-  const fmiCard = `<div class="card" style="margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><div><h3 style="font-size:16px">3. FMI / Activation Status Check</h3><p class="muted" style="font-size:12.5px;margin-top:2px">Layanan instan — harga terjangkau untuk semua model.</p></div><button class="btn btn-soft btn-sm" data-toast="FMI — pricing saved">Save changes</button></div>
+  const fmiCard = `<div class="card" data-pcard="fmi" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><div><h3 style="font-size:16px">3. FMI / Activation Status Check</h3><p class="muted" style="font-size:12.5px;margin-top:2px">Layanan instan — harga terjangkau untuk semua model.</p></div><button class="btn btn-soft btn-sm" data-psave="fmi">Save changes</button></div>
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:10px"><span class="badge badge-info badge-dot">Instan</span><span style="font-weight:500;font-size:13.5px">Semua iPhone 6 – iPhone 17</span></div>
-      ${rupInput(25000)}
+      ${rupInput(25000, 'Instan (semua model)')}
     </div>
     <div style="padding:10px 20px 2px"><div class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Premium report</div></div>
     <div class="table-wrapper"><table class="data"><thead><tr><th>Paket</th><th style="text-align:right">Harga (IDR)</th></tr></thead><tbody>
-      ${TBL_FMI.map(r => `<tr><td style="font-weight:500">${r[0]}</td><td>${rupInput(r[1])}</td></tr>`).join('')}
+      ${TBL_FMI.map(r => `<tr><td style="font-weight:500">${r[0]}</td><td>${rupInput(r[1], r[0])}</td></tr>`).join('')}
     </tbody></table></div></div>`;
   const content = `
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px" class="card-grid">
       ${statCard('dollar','Avg. order value','Rp685rb','3.2%')}${statCard('trend','Margin','62%','1.1%')}${statCard('package','Active services','4')}
     </div>
-    ${priceCard(1, 'iCloud Activation Lock Removal', 'Harga per model — iPhone 6 hingga 17 Series', TBL_ICLOUD, 'Device')}
-    ${priceCard(2, 'Carrier Network Unlock', 'Dikelompokkan per seri', TBL_CARRIER, 'Device')}
+    ${priceCard(1, 'icloud', 'iCloud Activation Lock Removal', 'Harga per model — iPhone 6 hingga 17 Series', TBL_ICLOUD, 'Device')}
+    ${priceCard(2, 'carrier', 'Carrier Network Unlock', 'Dikelompokkan per seri', TBL_CARRIER, 'Device')}
     ${fmiCard}
-    ${priceCard(4, 'MDM Profile Bypass', 'Dikelompokkan per seri', TBL_MDM, 'Device')}`;
+    ${priceCard(4, 'mdm', 'MDM Profile Bypass', 'Dikelompokkan per seri', TBL_MDM, 'Device')}`;
   return shell('/admin/pricing', ADMIN_NAV, 'Pricing management', 'Konfigurasi harga layanan (IDR)', content);
 });
-ROUTES['/admin/pricing']._after = bindShell;
+ROUTES['/admin/pricing']._after = function () {
+  bindShell();
+  const online = CONFIG.apiBase && getToken();
+  const parseRp = (v) => parseInt(String(v).replace(/[^\d]/g, ''), 10) || 0;
+  if (online) {
+    apiAuthed('/api/admin/pricing').then(d => {
+      const pr = (d && d.pricing) || {};
+      Object.entries(pr).forEach(([key, items]) => {
+        const card = document.querySelector(`[data-pcard="${key}"]`); if (!card) return;
+        items.forEach(it => {
+          const inp = Array.from(card.querySelectorAll('input[data-price]')).find(x => x.dataset.label === it.label);
+          if (inp) inp.value = Number(it.price).toLocaleString('id-ID');
+        });
+      });
+    }).catch(() => {});
+  }
+  $$('[data-psave]').forEach(btn => btn.addEventListener('click', () => {
+    const key = btn.dataset.psave;
+    const card = document.querySelector(`[data-pcard="${key}"]`); if (!card) return;
+    const items = Array.from(card.querySelectorAll('input[data-price]')).map(inp => ({ label: inp.dataset.label, price: parseRp(inp.value) }));
+    if (online) {
+      btn.disabled = true;
+      apiAuthed('/api/admin/pricing', { method: 'PUT', body: { service_key: key, items } })
+        .then(() => toast('Pricing saved'))
+        .catch(err => toast(err.message, 'alert'))
+        .finally(() => { btn.disabled = false; });
+    } else {
+      const s = getStore(); s.pricing = s.pricing || {}; s.pricing[key] = items; setStore(s);
+      toast('Pricing saved');
+    }
+  }));
+};
 
 /* ---- Admin: Voucher settings (connected to checkout) ---- */
 route('/admin/vouchers', function () {
@@ -2202,10 +2301,27 @@ route('/admin/webhooks', function () {
       <span class="badge badge-success badge-dot">Active</span><button class="btn btn-outline btn-sm" data-toast="Secret rotated">Rotate secret</button><button class="btn btn-outline btn-sm" data-toast="Test event sent">Send test</button>
     </div>
     <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Delivery logs</h3><div class="segmented"><button class="active">All</button><button>Failed</button></div></div>
-      <div class="table-wrapper"><table class="data"><thead><tr><th>Event ID</th><th>Type</th><th>Endpoint</th><th>Status</th><th>Latency</th><th>Time</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      <div class="table-wrapper"><table class="data"><thead><tr><th>Event ID</th><th>Type</th><th>Endpoint</th><th>Status</th><th>Latency</th><th>Time</th><th></th></tr></thead><tbody id="adminWebhookLogs">${rows}</tbody></table></div></div>`;
   return shell('/admin/webhooks', ADMIN_NAV, 'Webhook logs', 'Monitor webhook deliveries', content);
 });
-ROUTES['/admin/webhooks']._after = bindShell;
+ROUTES['/admin/webhooks']._after = function () {
+  bindShell();
+  if (!CONFIG.apiBase || !getToken()) return;
+  apiAuthed('/api/admin/webhooks').then(d => {
+    const tb = document.querySelector('#adminWebhookLogs');
+    if (!tb) return;
+    const logs = d.logs || [];
+    if (!logs.length) { tb.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">No webhook deliveries yet \u2014 send a test from Settings \u2192 API & Webhooks.</td></tr>'; return; }
+    tb.innerHTML = logs.map(w => `<tr>
+      <td class="cell-mono" style="color:var(--primary)">${w.event_id || '\u2014'}</td>
+      <td><span class="tag">${w.event || '\u2014'}</span></td>
+      <td class="cell-mono muted" style="font-size:12px">${(w.url || '').slice(0, 48)}</td>
+      <td>${w.status >= 200 && w.status < 300 ? `<span class="badge badge-success badge-dot">${w.status} OK</span>` : `<span class="badge badge-danger badge-dot">${w.status || 'ERR'}</span>`}</td>
+      <td class="cell-mono ${w.ms > 1000 ? '' : 'muted'}" style="${w.ms > 1000 ? 'color:var(--danger);font-weight:600' : ''}">${w.ms} ms</td>
+      <td class="muted cell-mono">${(w.created_at || '').slice(0, 19)}</td>
+      <td><button class="btn btn-ghost btn-sm" data-toast="Redelivering ${w.event_id}">${I.refresh(14)} Retry</button></td></tr>`).join('');
+  }).catch(() => {});
+};
 
 /* ---- Admin: Activity logs ---- */
 route('/admin/activity', function () {
@@ -2228,11 +2344,31 @@ route('/admin/activity', function () {
       <div class="segmented"><button class="active">All events</button><button>Users</button><button>System</button><button>Security</button></div>
       <div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm">${I.filter(15)} Filter</button><button class="btn btn-outline btn-sm">${I.download(15)} Export CSV</button></div>
     </div>
-    <div class="card"><div class="table-wrapper"><table class="data"><thead><tr><th>Actor</th><th>Action</th><th>Level</th><th>Timestamp</th><th>IP address</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="card"><div class="table-wrapper"><table class="data"><thead><tr><th>Actor</th><th>Action</th><th>Level</th><th>Timestamp</th><th>IP address</th></tr></thead><tbody id="adminActivityBody">${rows}</tbody></table></div>
       <div style="padding:14px 20px;border-top:1px solid var(--border)" class="muted" style="font-size:12.5px">Showing 7 of 18,402 events · retained for 90 days</div></div>`;
   return shell('/admin/activity', ADMIN_NAV, 'Activity logs', 'Audit trail of all platform events', content);
 });
-ROUTES['/admin/activity']._after = bindShell;
+ROUTES['/admin/activity']._after = function () {
+  bindShell();
+  if (!CONFIG.apiBase || !getToken()) return;
+  const lvl = (l) => l === 'success' ? 'success' : l === 'warning' ? 'warning' : l === 'danger' ? 'danger' : 'info';
+  apiAuthed('/api/admin/activity').then(d => {
+    const tb = document.querySelector('#adminActivityBody');
+    if (!tb) return;
+    const acts = d.activity || [];
+    if (!acts.length) { tb.innerHTML = '<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">No activity recorded yet.</td></tr>'; return; }
+    tb.innerHTML = acts.map(a => {
+      const actor = a.actor || 'System';
+      const initials = actor === 'System' ? I.cpu(15) : actor.split(/[ @]/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
+      return `<tr>
+        <td><div style="display:flex;align-items:center;gap:10px"><span class="avatar" style="width:30px;height:30px;font-size:11px;background:${actor === 'System' ? 'var(--muted-foreground)' : 'var(--primary)'}">${initials}</span><span style="font-weight:600;font-size:13px">${actor}</span></div></td>
+        <td style="font-size:13px">${a.action || ''} <b style="color:var(--primary)">${a.target || ''}</b></td>
+        <td><span style="width:8px;height:8px;border-radius:999px;display:inline-block;background:var(--${lvl(a.level)})"></span></td>
+        <td class="cell-mono muted" style="font-size:12px">${(a.created_at || '').slice(0, 19)}</td>
+        <td class="cell-mono muted" style="font-size:12px">${a.ip || '\u2014'}</td></tr>`;
+    }).join('');
+  }).catch(() => {});
+};
 
 /* ============================================================
    GLOBAL bindings (toast buttons etc.)
@@ -2559,10 +2695,27 @@ ROUTES['/dashboard/settings']._after = function () {
   const wh = $('#webhookUrl');
   if (wh) {
     const st = getStore(); if (st.settings && st.settings['api::webhookUrl']) wh.value = st.settings['api::webhookUrl'];
-    wh.addEventListener('change', () => { const s = getStore(); s.settings = s.settings || {}; s.settings['api::webhookUrl'] = wh.value; setStore(s); toast('Webhook URL saved'); });
+    if (CONFIG.apiBase && getToken()) apiAuthed('/api/webhooks/endpoint').then(d => { if (d && d.url) wh.value = d.url; }).catch(() => {});
+    wh.addEventListener('change', () => {
+      const s = getStore(); s.settings = s.settings || {}; s.settings['api::webhookUrl'] = wh.value; setStore(s);
+      if (CONFIG.apiBase && getToken()) apiAuthed('/api/webhooks/endpoint', { method: 'PUT', body: { url: wh.value } }).catch(() => {});
+      toast('Webhook URL saved');
+    });
   }
   const wt = $('#webhookTest');
-  if (wt) wt.addEventListener('click', () => { pushNotification('webhook', 'Test event sent', 'POST ' + (wh ? wh.value : '') + ' \u2014 200 OK'); toast('Test event sent \u2014 200 OK'); });
+  if (wt) wt.addEventListener('click', () => {
+    if (CONFIG.apiBase && getToken()) {
+      if (wh) apiAuthed('/api/webhooks/endpoint', { method: 'PUT', body: { url: wh.value } }).catch(() => {});
+      wt.disabled = true;
+      apiAuthed('/api/webhooks/test', { method: 'POST' })
+        .then(d => { toast('Test event sent \u2014 HTTP ' + d.status + ' (' + d.ms + ' ms)', d.ok ? '' : 'alert'); })
+        .catch(err => toast(err.message, 'alert'))
+        .finally(() => { wt.disabled = false; });
+    } else {
+      pushNotification('webhook', 'Test event sent', 'POST ' + (wh ? wh.value : '') + ' \u2014 200 OK');
+      toast('Test event sent \u2014 200 OK');
+    }
+  });
 
   // --- Billing: real invoice PDF downloads ---
   function invoicePDF(id, date, amt) {
@@ -2590,31 +2743,54 @@ ROUTES['/dashboard/settings']._after = function () {
     toast('All invoices exported');
   });
 
-  // --- API keys: create / copy / revoke (store-backed) ---
+  // --- API keys: create / copy / revoke (REAL backend when online, else local store) ---
+  const apiOnline = () => !!(CONFIG.apiBase && getToken());
+  let _keyCache = [];
+  function keyRowsFromList(keys) {
+    return (keys || []).map(k => `<div class="card" style="box-shadow:none;background:var(--surface);padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+      <span style="color:var(--primary)">${I.key(18)}</span>
+      <div style="flex:1;min-width:160px"><div style="font-weight:600;font-size:13px">${k.label} key <span class="badge ${k.env === 'Live' ? 'badge-success' : 'badge-neutral'}" style="font-size:10px">${k.env}</span></div><div class="cell-mono muted" style="font-size:12px">${maskKey(k.key)}</div></div>
+      <button class="btn btn-outline btn-sm" data-copy="${k.id}">${I.copy(14)} Copy</button>
+      <button class="btn btn-ghost btn-sm" data-revoke="${k.id}">Revoke</button></div>`).join('') || '<div class="muted" style="padding:14px;text-align:center;font-size:13px">No API keys \u2014 create one to get started.</div>';
+  }
+  function renderKeys() {
+    const list = $('#apiKeyList'); if (!list) return;
+    if (apiOnline()) {
+      apiAuthed('/api/keys').then(d => { _keyCache = d.keys || []; list.innerHTML = keyRowsFromList(_keyCache); bindKeyRows(); }).catch(() => {});
+    } else { list.innerHTML = apiKeyRowsHTML(); bindKeyRows(); }
+  }
   function bindKeyRows() {
     $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
-      const s = getStore(); const k = (s.apikeys || []).find(x => x.id === b.dataset.copy); if (!k) return;
-      try { await navigator.clipboard.writeText(k.key); toast('API key copied to clipboard'); }
+      let key;
+      if (apiOnline()) { const k = _keyCache.find(x => x.id === b.dataset.copy); key = k && k.key; }
+      else { const s = getStore(); const k = (s.apikeys || []).find(x => x.id === b.dataset.copy); key = k && k.key; }
+      if (!key) return;
+      try { await navigator.clipboard.writeText(key); toast('API key copied to clipboard'); }
       catch (e) { toast('Copy failed \u2014 select the key manually', 'alert'); }
     }));
     $$('[data-revoke]').forEach(b => b.addEventListener('click', () => {
-      const s = getStore(); const idx = (s.apikeys || []).findIndex(x => x.id === b.dataset.revoke);
-      if (idx < 0) return;
-      const lbl = s.apikeys[idx].label; s.apikeys.splice(idx, 1); setStore(s);
-      const list = $('#apiKeyList'); if (list) { list.innerHTML = apiKeyRowsHTML(); bindKeyRows(); }
-      toast(lbl + ' key revoked');
+      if (apiOnline()) {
+        apiAuthed('/api/keys/' + b.dataset.revoke, { method: 'DELETE' }).then(() => { toast('API key revoked'); renderKeys(); }).catch(err => toast(err.message, 'alert'));
+      } else {
+        const s = getStore(); const idx = (s.apikeys || []).findIndex(x => x.id === b.dataset.revoke);
+        if (idx < 0) return; const lbl = s.apikeys[idx].label; s.apikeys.splice(idx, 1); setStore(s);
+        toast(lbl + ' key revoked'); renderKeys();
+      }
     }));
   }
-  bindKeyRows();
+  renderKeys();
   const ck = $('#apiCreateBtn');
   if (ck) ck.addEventListener('click', () => {
-    const s = getStore(); s.apikeys = s.apikeys || [];
-    const id = 'k_' + Date.now();
-    const newKey = { id: id, label: 'Key ' + (s.apikeys.length + 1), env: 'Live', key: genApiKey('Live') };
-    s.apikeys.unshift(newKey); setStore(s);
-    const list = $('#apiKeyList'); if (list) { list.innerHTML = apiKeyRowsHTML(); bindKeyRows(); }
-    pushNotification('key', 'New API key created', newKey.label + ' (' + newKey.env + ')');
-    toast('New API key created');
+    if (apiOnline()) {
+      apiAuthed('/api/keys', { method: 'POST', body: { label: 'Key', env: 'Live' } })
+        .then(() => { toast('New API key created'); renderKeys(); }).catch(err => toast(err.message, 'alert'));
+    } else {
+      const s = getStore(); s.apikeys = s.apikeys || [];
+      const newKey = { id: 'k_' + Date.now(), label: 'Key ' + (s.apikeys.length + 1), env: 'Live', key: genApiKey('Live') };
+      s.apikeys.unshift(newKey); setStore(s);
+      pushNotification('key', 'New API key created', newKey.label + ' (' + newKey.env + ')');
+      toast('New API key created'); renderKeys();
+    }
   });
 };
 
@@ -2636,8 +2812,8 @@ function updateThemeIcons() {
   const dark = document.documentElement.classList.contains('dark');
   $$('[data-theme-toggle]').forEach(b => b.innerHTML = dark ? I.sun(19) : I.moon(19));
 }
-function toggleTheme() { applyTheme('light'); }
-function initTheme() { applyTheme('light'); }
+function toggleTheme() { applyTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark'); }
+function initTheme() { applyTheme(storedTheme() || 'system'); }
 function themeBtn() { return ''; }
 initTheme();
 window.addEventListener('DOMContentLoaded', initTheme);
