@@ -499,7 +499,7 @@ route('/', function () {
    AUTH PAGES (Login / Register) — split layout
    ============================================================ */
 function authAside(title, sub, points) {
-  return `<div style="background:linear-gradient(150deg,#266FA2,#143a55);color:#fff;padding:48px;display:flex;flex-direction:column;position:relative;overflow:hidden" class="auth-aside">
+  return `<div style="background:linear-gradient(150deg,#2563eb,#1e3a8a);color:#fff;padding:48px;display:flex;flex-direction:column;position:relative;overflow:hidden" class="auth-aside">
     <div class="grid-mask" style="position:absolute;inset:0;opacity:.15"></div>
     <div style="position:relative;flex:1;display:flex;flex-direction:column">
       ${brandLogo(true)}
@@ -611,7 +611,7 @@ ROUTES['/register']._after = function () {
     const v = f.password.value; let score = 0;
     if (v.length >= 8) score++; if (/[A-Z]/.test(v) && /[a-z]/.test(v)) score++;
     if (/\d/.test(v)) score++; if (/[^A-Za-z0-9]/.test(v)) score++;
-    const colors = ['', '#dc2626', '#d97706', '#266FA2', '#16a34a'];
+    const colors = ['', '#dc2626', '#d97706', '#2563eb', '#16a34a'];
     const labels = ['', 'Weak password', 'Fair password', 'Good password', 'Strong password'];
     bars.forEach((b, i) => b.style.background = i < score ? colors[score] : 'var(--muted)');
     if (v) { hint.textContent = labels[score] || labels[1]; hint.style.color = colors[score] || '#dc2626'; }
@@ -767,7 +767,7 @@ route('/dashboard', function () {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="font-size:16px">Service mix</h3></div>
         <div style="height:200px"><canvas id="mixChart"></canvas></div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
-          ${[['iCloud Removal','#266FA2','46%'],['Carrier Unlock','#5fa3cf','31%'],['Status Check','#a9cde5','14%'],['MDM Bypass','#dce9f3','9%']].map(s=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><span style="width:10px;height:10px;border-radius:3px;background:${s[1]}"></span><span style="flex:1">${s[0]}</span><span class="muted" style="font-weight:600">${s[2]}</span></div>`).join('')}
+          ${[['iCloud Removal','#2563eb','46%'],['Carrier Unlock','#60a5fa','31%'],['Status Check','#a9cde5','14%'],['MDM Bypass','#dce9f3','9%']].map(s=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><span style="width:10px;height:10px;border-radius:3px;background:${s[1]}"></span><span style="flex:1">${s[0]}</span><span class="muted" style="font-weight:600">${s[2]}</span></div>`).join('')}
         </div>
       </div>
     </div>
@@ -813,8 +813,8 @@ ROUTES['/dashboard']._after = function () {
   }
   if (!window.Chart) return;
   const grid = { grid: { color: '#eef0f3' }, ticks: { color: '#64748b', font: { size: 11 } }, border: { display: false } };
-  new Chart($('#ordersChart'), { type: 'line', data: { labels: ['Dec','Jan','Feb','Mar','Apr','May','Jun'], datasets: [{ data: [22,28,31,38,42,49,58], borderColor: '#266FA2', backgroundColor: 'rgba(38,111,162,.12)', fill: true, tension: .4, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: grid, y: { ...grid, beginAtZero: true } } } });
-  new Chart($('#mixChart'), { type: 'doughnut', data: { labels: ['iCloud','Carrier','Status','MDM'], datasets: [{ data: [46,31,14,9], backgroundColor: ['#266FA2','#5fa3cf','#a9cde5','#dce9f3'], borderWidth: 0, cutout: '68%' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+  new Chart($('#ordersChart'), { type: 'line', data: { labels: ['Dec','Jan','Feb','Mar','Apr','May','Jun'], datasets: [{ data: [22,28,31,38,42,49,58], borderColor: '#2563eb', backgroundColor: 'rgba(38,111,162,.12)', fill: true, tension: .4, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: grid, y: { ...grid, beginAtZero: true } } } });
+  new Chart($('#mixChart'), { type: 'doughnut', data: { labels: ['iCloud','Carrier','Status','MDM'], datasets: [{ data: [46,31,14,9], backgroundColor: ['#2563eb','#60a5fa','#a9cde5','#dce9f3'], borderWidth: 0, cutout: '68%' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
 };
 
 /* ============================================================
@@ -1284,7 +1284,7 @@ route('/support', function () {
   </div>`;
 
   const content = `
-    <div class="card card-pad" style="background:linear-gradient(135deg,#266FA2,#184a6d);color:#fff;margin-bottom:20px;border:none">
+    <div class="card card-pad" style="background:linear-gradient(135deg,#2563eb,#1e40af);color:#fff;margin-bottom:20px;border:none">
       <h2 style="color:#fff;font-size:24px">How can we help?</h2>
       <p style="opacity:.9;font-size:14px;margin:6px 0 16px">Search our knowledge base or open a ticket — our team replies in under 4 minutes.</p>
       <div class="input-group" style="max-width:520px"><span class="input-icon">${I.search(18)}</span><input class="input" placeholder="Search articles, guides, FAQs…" style="height:46px"></div>
@@ -1373,7 +1373,7 @@ ROUTES['/admin']._after = function () {
   if (!window.Chart) return;
   const grid = { grid: { color: '#eef0f3' }, ticks: { color: '#64748b', font: { size: 11 } }, border: { display: false } };
   new Chart($('#revChart'), { type: 'bar', data: { labels: ['Jan','Feb','Mar','Apr','May','Jun'], datasets: [
-    { label: 'Revenue', data: [42,51,58,67,74,84], backgroundColor: '#266FA2', borderRadius: 6, barPercentage: .6, yAxisID: 'y' },
+    { label: 'Revenue', data: [42,51,58,67,74,84], backgroundColor: '#2563eb', borderRadius: 6, barPercentage: .6, yAxisID: 'y' },
     { type: 'line', label: 'Orders', data: [980,1120,1290,1480,1640,1842], borderColor: '#f5a623', backgroundColor: 'transparent', borderWidth: 2.5, tension: .4, pointRadius: 0, yAxisID: 'y1' }
   ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, scales: { x: grid, y: { ...grid, beginAtZero: true }, y1: { position: 'right', grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } }, border: { display: false } } } } });
 };
@@ -1760,7 +1760,7 @@ route('/dashboard/settings', function () {
     </div>
     <div class="divider" style="margin:20px 0"></div>
     <h4 style="font-size:14px;font-weight:600;margin-bottom:10px">Accent color</h4>
-    <div style="display:flex;gap:10px;margin-bottom:4px">${['#266FA2','#0f172a','#7c3aed','#16a34a','#dc2626','#d97706'].map((c,i)=>`<span class="swatch ${i===0?'active':''}" data-swatch style="background:${c}"></span>`).join('')}</div>
+    <div style="display:flex;gap:10px;margin-bottom:4px">${['#2563eb','#0f172a','#7c3aed','#16a34a','#dc2626','#d97706'].map((c,i)=>`<span class="swatch ${i===0?'active':''}" data-swatch style="background:${c}"></span>`).join('')}</div>
     <div class="divider" style="margin:20px 0"></div>
     ${setRow('Compact density', 'Reduce padding for denser tables', sw(false))}
     ${setRow('Reduce motion', 'Minimize animations & transitions', sw(false))}
@@ -2053,7 +2053,7 @@ function deviceShowcase() {
   const carriers = ['AT&T', 'T-Mobile', 'Verizon', 'Vodafone', 'Orange', 'O2', 'EE', 'Telcel', 'Claro', 'Telstra', 'Rogers', 'SK Telecom'];
   return `<section class="section devices-section" id="devices">
     <svg width="0" height="0" style="position:absolute"><defs>
-      <linearGradient id="scrStd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4a98c6"/><stop offset="1" stop-color="#184a6d"/></linearGradient>
+      <linearGradient id="scrStd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#1e40af"/></linearGradient>
       <linearGradient id="scrPro" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2c3a57"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
     </defs></svg>
     <div class="container-x"><div style="text-align:center;max-width:660px;margin:0 auto 40px">
