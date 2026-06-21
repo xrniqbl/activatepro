@@ -115,6 +115,211 @@ function loadDemoUser() { try { const u = JSON.parse(localStorage.getItem(DEMO_U
 function isAdmin() { return !!(DATA.user && DATA.user.role === 'admin'); }
 
 /* ---------- Order tracking stages (admin -> customer) ---------- */
+
+/* ============================================================
+   i18n — two languages (Indonesian default, English) + currency
+   ============================================================ */
+let _lang = 'id';
+try { _lang = localStorage.getItem('ap-lang') || 'id'; } catch (e) {}
+const USD_RATE = 16000; // IDR per 1 USD (display conversion)
+
+// [English, Indonesian] pairs. Translator works BOTH directions because the
+// source code mixes English and Indonesian strings.
+const I18N_PAIRS = [
+  // Marketing nav / chrome
+  ['Pricing', 'Harga'], ['Devices', 'Perangkat'], ['Features', 'Fitur'], ['FAQ', 'FAQ'],
+  ['Support', 'Bantuan'], ['Sign in', 'Masuk'], ['Get started', 'Mulai'], ['Create one', 'Buat akun'],
+  ["Don't have an account?", 'Belum punya akun?'], ['Already registered?', 'Sudah terdaftar?'],
+  ['Create your account', 'Buat akun Anda'], ['Work email', 'Email kerja'], ['First name', 'Nama depan'],
+  ['Last name', 'Nama belakang'], ['Email', 'Email'], ['Email address', 'Alamat email'], ['Password', 'Kata sandi'],
+  ['Confirm password', 'Konfirmasi kata sandi'], ['Re-enter password', 'Masukkan ulang kata sandi'],
+  ['Keep me signed in', 'Tetap masuk'], ['Forgot?', 'Lupa?'], ['or continue with email', 'atau lanjut dengan email'],
+  ['or', 'atau'], ['Terms', 'Ketentuan'], ['Privacy Policy', 'Kebijakan Privasi'], ['I agree to the', 'Saya menyetujui'],
+  ['Create a strong password', 'Buat kata sandi yang kuat'], ['you@company.com', 'anda@perusahaan.com'],
+  ['Use 8+ characters with a mix of letters, numbers & symbols.', 'Gunakan 8+ karakter dengan kombinasi huruf, angka & simbol.'],
+  ['At least 8 characters', 'Minimal 8 karakter'], ['Enter a valid email address.', 'Masukkan alamat email yang valid.'],
+  ['Password is required.', 'Kata sandi wajib diisi.'], ['Password must be at least 8 characters.', 'Kata sandi minimal 8 karakter.'],
+  ['Passwords do not match.', 'Kata sandi tidak cocok.'], ['Please accept the terms to continue.', 'Mohon setujui ketentuan untuk lanjut.'],
+  // Hero / landing
+  ['100% Original Method. Fast Process. Official Warranty. Best Price.', '100% Metode Original. Proses Cepat. Garansi Resmi. Harga Terbaik.'],
+  ['Activate & unlock your iPhone with the fastest process and official warranty.', 'Aktivasi & unlock iPhone Anda dengan proses tercepat dan garansi resmi.'],
+  ['Activate Your Device Today', 'Aktivasi Perangkat Anda Hari Ini'], ['Activate & Unlock', 'Aktivasi & Unlock'],
+  ['0% Installment', 'Cicilan 0%'], ['Start Order', 'Mulai Pesanan'], ['View Services', 'Lihat Layanan'],
+  ['Compare Services', 'Bandingkan Layanan'], ['All Services', 'Semua Layanan'], ['Our Services', 'Layanan Kami'],
+  ['Featured Services', 'Layanan Unggulan'], ['Supports All iPhone Models', 'Mendukung Semua Model iPhone'],
+  ['Supported devices', 'Perangkat yang didukung'], ['Supported', 'Didukung'],
+  ['What Our Customers Say', 'Kata Pelanggan Kami'], ['Frequently Asked Questions', 'Pertanyaan yang Sering Diajukan'],
+  ['Rated 4.9/5 by 3,200+ businesses', 'Dinilai 4.9/5 oleh 3.200+ bisnis'], ['Secure Payment', 'Pembayaran Aman'],
+  ['Starting From', 'Mulai Dari'], ['Turnaround', 'Waktu Proses'], ['Compare Services', 'Bandingkan Layanan'],
+  ['Permanent factory unlocks across 80+ carriers', 'Unlock pabrik permanen di 80+ operator'],
+  ['Every iPhone from the iPhone 6 to the iPhone 17 Pro Max \u2014 across all iOS versions and 80+ carriers worldwide.', 'Setiap iPhone dari iPhone 6 hingga iPhone 17 Pro Max \u2014 di semua versi iOS dan 80+ operator di seluruh dunia.'],
+  // Sidebar nav
+  ['Dashboard', 'Dasbor'], ['New order', 'Pesanan baru'], ['My orders', 'Pesanan saya'], ['Order tracking', 'Lacak pesanan'],
+  ['Checkout', 'Pembayaran'], ['Support center', 'Pusat bantuan'], ['Admin console', 'Konsol admin'],
+  ['Profile', 'Profil'], ['Settings', 'Pengaturan'], ['Customer view', 'Tampilan pelanggan'],
+  ['Order management', 'Manajemen pesanan'], ['User management', 'Manajemen pengguna'], ['Pricing management', 'Manajemen harga'],
+  ['Voucher settings', 'Pengaturan voucher'], ['Webhook logs', 'Log webhook'], ['Activity logs', 'Log aktivitas'],
+  ['Sign out', 'Keluar'], ['Main', 'Utama'], ['Account', 'Akun'], ['Overview', 'Ikhtisar'], ['Configuration', 'Konfigurasi'],
+  // Topbar / common
+  ['Search orders, IMEI\u2026', 'Cari pesanan, IMEI\u2026'], ['Notifications', 'Notifikasi'], ['Mark all read', 'Tandai sudah dibaca'],
+  ['All read', 'Sudah dibaca semua'], ['New order', 'Pesanan baru'],
+  // Dashboard
+  ['Orders overview', 'Ikhtisar pesanan'], ['Recent orders', 'Pesanan terbaru'], ['Orders', 'Pesanan'], ['Spend', 'Pengeluaran'],
+  ['Service mix', 'Komposisi layanan'], ['Order', 'Pesanan'], ['Device', 'Perangkat'], ['Service', 'Layanan'],
+  ['Status', 'Status'], ['Amount', 'Jumlah'], ['Date', 'Tanggal'], ['Actions', 'Aksi'], ['Action', 'Aksi'], ['Track', 'Lacak'],
+  ['Completed', 'Selesai'], ['Processing', 'Diproses'], ['Pending', 'Menunggu'], ['Failed', 'Gagal'], ['Queued', 'Antrean'],
+  ['Showing 6 of 248 orders', 'Menampilkan 6 dari 248 pesanan'],
+  // New order wizard
+  ['Choose a service', 'Pilih layanan'], ['Select your device', 'Pilih perangkat Anda'],
+  ['Enter & validate IMEI', 'Masukkan & validasi IMEI'], ['Review your order', 'Tinjau pesanan Anda'],
+  ['Select the exact model you\u2019d like to service.', 'Pilih model persis yang ingin Anda layani.'],
+  ['Choose your iPhone series \u2014 or search for a specific model.', 'Pilih seri iPhone Anda \u2014 atau cari model tertentu.'],
+  ['All series', 'Semua seri'], ['All iPhone', 'Semua iPhone'], ['Search all iPhone models\u2026', 'Cari semua model iPhone\u2026'],
+  ['No models match your search.', 'Tidak ada model yang cocok dengan pencarian Anda.'],
+  ['IMEI number (15 digits)', 'Nomor IMEI (15 digit)'], ['Next', 'Lanjut'], ['Previous', 'Sebelumnya'], ['Back', 'Kembali'],
+  ['Confirm the details below before continuing to checkout.', 'Konfirmasi detail di bawah sebelum lanjut ke pembayaran.'],
+  ['Upload supporting documents', 'Unggah dokumen pendukung'], ['Attached documents', 'Dokumen terlampir'],
+  ['No documents attached', 'Tidak ada dokumen terlampir'], ['Drop files here or', 'Letakkan file di sini atau'], ['browse', 'telusuri'],
+  ['PDF, JPG or PNG \u00b7 up to 10MB each', 'PDF, JPG atau PNG \u00b7 maks 10MB per file'],
+  ['Optional: proof of purchase or device photos to speed up verification.', 'Opsional: bukti pembelian atau foto perangkat untuk mempercepat verifikasi.'],
+  ['Model:', 'Model:'], ['Est. model:', 'Perkiraan model:'], ['Length:', 'Panjang:'], ['Luhn:', 'Luhn:'], ['TAC:', 'TAC:'],
+  ['FMI:', 'FMI:'], ['Blacklist:', 'Daftar hitam:'], ['Warranty:', 'Garansi:'], ['Dial', 'Telepon'],
+  // Checkout
+  ['Payment method', 'Metode pembayaran'], ['Order summary', 'Ringkasan pesanan'], ['Cardholder name', 'Nama pemegang kartu'],
+  ['Card number', 'Nomor kartu'], ['Expiry', 'Kedaluwarsa'], ['Subtotal', 'Subtotal'], ['Discount', 'Diskon'], ['Total', 'Total'],
+  ['Promo code', 'Kode promo'], ['Apply', 'Terapkan'], ['Back to order', 'Kembali ke pesanan'], ['Invoice preview', 'Pratinjau faktur'],
+  ['Invoice', 'Faktur'], ['Billed to', 'Ditagih ke'], ['Amount due', 'Jumlah tagihan'], ['Draft', 'Draf'],
+  ['Payments are encrypted and PCI-DSS compliant. You can request a full refund if the service fails.', 'Pembayaran dienkripsi dan sesuai PCI-DSS. Anda dapat meminta pengembalian penuh jika layanan gagal.'],
+  ['Service fee', 'Biaya layanan'],
+  // Tracking
+  ['Live updates', 'Pembaruan langsung'], ['Order details', 'Detail pesanan'], ['Progress', 'Kemajuan'],
+  ['Placed', 'Dibuat'], ['Verified', 'Terverifikasi'], ['Quality check', 'Pemeriksaan kualitas'], ['Refresh', 'Segarkan'],
+  ['Get help with this order', 'Dapatkan bantuan untuk pesanan ini'],
+  // Support
+  ['How can we help?', 'Apa yang bisa kami bantu?'], ['Your tickets', 'Tiket Anda'], ['Knowledge base', 'Basis pengetahuan'],
+  ['New ticket', 'Tiket baru'], ['Open a new ticket', 'Buka tiket baru'], ['Subject', 'Subjek'], ['Category', 'Kategori'],
+  ['Message', 'Pesan'], ['Submit ticket', 'Kirim tiket'], ['Related order (optional)', 'Pesanan terkait (opsional)'],
+  ['Briefly describe the issue', 'Jelaskan masalah secara singkat'], ['Still need help?', 'Masih butuh bantuan?'],
+  ['This helped', 'Ini membantu'], ['Open', 'Terbuka'], ['In progress', 'Sedang berjalan'], ['Resolved', 'Selesai'],
+  ['Open support center', 'Buka pusat bantuan'], ['Contact Support', 'Hubungi Bantuan'],
+  // Settings
+  ['General preferences', 'Preferensi umum'], ['Configure your workspace defaults.', 'Atur preferensi default ruang kerja Anda.'],
+  ['Language', 'Bahasa'], ['Interface display language', 'Bahasa tampilan antarmuka'], ['Timezone', 'Zona waktu'],
+  ['Used for timestamps & reports', 'Digunakan untuk waktu & laporan'], ['Currency', 'Mata uang'],
+  ['Follows the selected language', 'Mengikuti bahasa yang dipilih'], ['Default service', 'Layanan default'],
+  ['Pre-selected on new orders', 'Dipilih otomatis pada pesanan baru'], ['Auto-archive completed orders', 'Arsipkan otomatis pesanan selesai'],
+  ['Hide orders 30 days after completion', 'Sembunyikan pesanan 30 hari setelah selesai'],
+  ['Notification preferences', 'Preferensi notifikasi'], ['Choose how and when we contact you.', 'Pilih bagaimana dan kapan kami menghubungi Anda.'],
+  ['Order status updates', 'Pembaruan status pesanan'], ['When an order changes status', 'Saat status pesanan berubah'],
+  ['Order completed', 'Pesanan selesai'], ['When activation finishes', 'Saat aktivasi selesai'],
+  ['Payment & invoices', 'Pembayaran & faktur'], ['Receipts and billing alerts', 'Tanda terima dan pemberitahuan tagihan'],
+  ['Product news & offers', 'Berita & penawaran produk'], ['Occasional promotions', 'Promosi sesekali'],
+  ['Browser push', 'Push browser'], ['Real-time desktop alerts', 'Notifikasi desktop real-time'],
+  ['SMS for failures', 'SMS untuk kegagalan'], ['Text me if an order fails', 'Kirim SMS jika pesanan gagal'],
+  ['Change password', 'Ubah kata sandi'], ['Current password', 'Kata sandi saat ini'], ['New password', 'Kata sandi baru'],
+  ['Confirm new password', 'Konfirmasi kata sandi baru'], ['Update password', 'Perbarui kata sandi'],
+  ['Authentication', 'Autentikasi'], ['Protect your account with additional verification.', 'Lindungi akun Anda dengan verifikasi tambahan.'],
+  ['Two-factor authentication', 'Autentikasi dua faktor'], ['Require a code at sign-in', 'Minta kode saat masuk'],
+  ['Login alerts', 'Peringatan login'], ['Email me on new device sign-ins', 'Email saya saat login dari perangkat baru'],
+  ['Trusted devices only', 'Hanya perangkat tepercaya'], ['Block sign-ins from new devices', 'Blokir login dari perangkat baru'],
+  ['Payment methods', 'Metode pembayaran'], ['Add card', 'Tambah kartu'], ['Make default', 'Jadikan default'],
+  ['Wallet', 'Dompet'], ['Current balance:', 'Saldo saat ini:'], ['Invoices', 'Faktur'], ['Export all', 'Ekspor semua'],
+  ['Appearance', 'Tampilan'], ['Customize how ActivatePro looks for you.', 'Sesuaikan tampilan ActivatePro untuk Anda.'],
+  ['Theme', 'Tema'], ['Light', 'Terang'], ['Dark', 'Gelap'], ['System', 'Sistem'], ['Accent color', 'Warna aksen'],
+  ['Compact density', 'Kepadatan ringkas'], ['Reduce padding for denser tables', 'Kurangi jarak untuk tabel lebih padat'],
+  ['Reduce motion', 'Kurangi animasi'], ['Minimize animations & transitions', 'Minimalkan animasi & transisi'],
+  ['API keys', 'Kunci API'], ['Use these to authenticate API requests.', 'Gunakan ini untuk autentikasi permintaan API.'],
+  ['Create key', 'Buat kunci'], ['Copy', 'Salin'], ['Revoke', 'Cabut'], ['Webhook endpoint', 'Endpoint webhook'],
+  ["We'll POST event payloads to this URL.", 'Kami akan mengirim payload event ke URL ini.'], ['Endpoint URL', 'URL endpoint'],
+  ['Send test', 'Kirim uji'], ['View webhook logs', 'Lihat log webhook'], ['Danger zone', 'Zona berbahaya'],
+  ['Permanently delete your account and all associated data. This cannot be undone.', 'Hapus permanen akun Anda dan semua data terkait. Tindakan ini tidak dapat dibatalkan.'],
+  ['Active sessions', 'Sesi aktif'], ['Two-factor auth', 'Autentikasi dua faktor'], ['Email on new sign-in', 'Email saat login baru'],
+  ['Extra layer of security', 'Lapisan keamanan tambahan'], ['Change', 'Ubah'], ['Last changed 3 months ago', 'Terakhir diubah 3 bulan lalu'],
+  // Profile
+  ['Personal information', 'Informasi pribadi'], ['Update your personal details and contact information.', 'Perbarui detail pribadi dan informasi kontak Anda.'],
+  ['Bio', 'Bio'], ['Phone', 'Telepon'], ['Country', 'Negara'], ['Save changes', 'Simpan perubahan'],
+  ['Tell us about your business\u2026', 'Ceritakan tentang bisnis Anda\u2026'], ['Pro plan', 'Paket Pro'],
+  ['Independent iPhone repair & activation reseller serving 500+ customers monthly.', 'Reseller perbaikan & aktivasi iPhone independen yang melayani 500+ pelanggan per bulan.'],
+  // Admin
+  ['Admin dashboard', 'Dasbor admin'], ['Operations overview', 'Ikhtisar operasi'], ['Revenue analytics', 'Analitik pendapatan'],
+  ['Monthly revenue vs. orders', 'Pendapatan bulanan vs. pesanan'], ['Activity log', 'Log aktivitas'], ['View full log', 'Lihat log lengkap'],
+  ['Manage orders', 'Kelola pesanan'], ['Manage and process all orders', 'Kelola dan proses semua pesanan'],
+  ['Complete', 'Selesaikan'], ['Export', 'Ekspor'], ['All', 'Semua'], ['Search orders\u2026', 'Cari pesanan\u2026'],
+  ['Team & users', 'Tim & pengguna'], ['Manage team members and resellers', 'Kelola anggota tim dan reseller'],
+  ['Invite user', 'Undang pengguna'], ['Role', 'Peran'], ['Joined', 'Bergabung'], ['Users', 'Pengguna'], ['User', 'Pengguna'],
+  ['Active', 'Aktif'], ['Suspended', 'Ditangguhkan'], ['Verified', 'Terverifikasi'], ['Unverified', 'Belum verifikasi'],
+  ['Create and manage discount codes', 'Buat dan kelola kode diskon'], ['Create voucher', 'Buat voucher'],
+  ['These codes work on the customer checkout page', 'Kode ini berlaku di halaman pembayaran pelanggan'],
+  ['Vouchers', 'Voucher'], ['Code', 'Kode'], ['Type', 'Tipe'], ['Value', 'Nilai'], ['Note', 'Catatan'],
+  ['Percentage', 'Persentase'], ['Fixed (Rp)', 'Tetap (Rp)'], ['Add', 'Tambah'], ['New customer discount', 'Diskon pelanggan baru'],
+  ['Disabled', 'Nonaktif'], ['Total vouchers', 'Total voucher'], ['Connected to', 'Terhubung ke'],
+  ['Konfigurasi harga layanan (IDR)', 'Konfigurasi harga layanan (IDR)'], ['Premium report', 'Laporan premium'],
+  ['Delivery logs', 'Log pengiriman'], ['Event ID', 'ID Event'], ['Endpoint', 'Endpoint'], ['Latency', 'Latensi'],
+  ['Time', 'Waktu'], ['All events', 'Semua event'], ['Rotate secret', 'Rotasi rahasia'], ['Rotate', 'Rotasi'],
+  ['Actor', 'Pelaku'], ['Level', 'Tingkat'], ['Timestamp', 'Cap waktu'], ['IP address', 'Alamat IP'],
+  ['Showing 7 of 18,402 events \u00b7 retained for 90 days', 'Menampilkan 7 dari 18.402 event \u00b7 disimpan 90 hari'],
+  ['Access restricted', 'Akses dibatasi'], ['Administrator area', 'Area administrator'], ['Admin access only', 'Khusus akses admin'],
+  ['The admin console is restricted to administrator accounts. Sign in with an admin account to manage orders, pricing and vouchers.', 'Konsol admin hanya untuk akun administrator. Masuk dengan akun admin untuk mengelola pesanan, harga, dan voucher.'],
+  ['Back to dashboard', 'Kembali ke dasbor'],
+  // Auth misc
+  ['Reset password', 'Atur ulang kata sandi'], ['Set a new password', 'Atur kata sandi baru'],
+  ['Enter the email associated with your account.', 'Masukkan email yang terkait dengan akun Anda.'],
+  ['Enter and confirm your new password.', 'Masukkan dan konfirmasi kata sandi baru Anda.'],
+  ['Check your inbox', 'Periksa kotak masuk Anda'], ['We sent a password reset link to', 'Kami mengirim tautan atur ulang kata sandi ke'],
+  ['You can now sign in with your new password.', 'Anda sekarang bisa masuk dengan kata sandi baru.'],
+  ['Enter verification code', 'Masukkan kode verifikasi'], ['Sent to', 'Dikirim ke'],
+  ["Didn't receive a code?", 'Tidak menerima kode?'], ['Resend', 'Kirim ulang'], ['Wrong email? Go back', 'Email salah? Kembali'],
+  ['Please enter all 6 digits.', 'Mohon masukkan semua 6 digit.'], ['Back to sign in', 'Kembali ke halaman masuk'],
+  ['Company', 'Perusahaan'], ['Knowledge base', 'Basis pengetahuan'],
+  ['Enterprise-grade iPhone activation and device service management. Trusted by 12,000+ resellers worldwide.', 'Manajemen aktivasi iPhone dan layanan perangkat kelas enterprise. Dipercaya 12.000+ reseller di seluruh dunia.'],
+];
+
+let _i18nEN = null, _i18nID = null;
+function buildI18n() {
+  _i18nEN = {}; _i18nID = {};
+  I18N_PAIRS.forEach(p => { _i18nEN[p[0]] = p[1]; _i18nID[p[1]] = p[0]; });
+}
+function tr(s) {
+  if (!_i18nEN) buildI18n();
+  const k = s.trim();
+  if (_lang === 'id') return Object.prototype.hasOwnProperty.call(_i18nEN, k) ? _i18nEN[k] : null;
+  return Object.prototype.hasOwnProperty.call(_i18nID, k) ? _i18nID[k] : null;
+}
+function applyI18n(root) {
+  root = root || document.body;
+  if (!_i18nEN) buildI18n();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n => {
+    const raw = n.nodeValue; const t = raw.trim(); if (!t) return;
+    const rep = tr(t);
+    if (rep != null && rep !== t) n.nodeValue = raw.replace(t, rep);
+  });
+  // In English mode, convert any hardcoded Rupiah amounts to USD.
+  if (_lang === 'en') {
+    nodes.forEach(n => {
+      if (n.nodeValue.indexOf('Rp') < 0) return;
+      n.nodeValue = n.nodeValue.replace(/Rp\s?([\d.]+)\s?(Jt|jt|JT|rb|Rb|RB)?/g, (m, num, suf) => {
+        let val;
+        if (/jt/i.test(suf || '')) val = parseFloat(num.replace(/\./g, '')) * 1e6;
+        else if (/rb/i.test(suf || '')) val = parseFloat(num.replace(/\./g, '')) * 1e3;
+        else val = parseFloat(num.replace(/\./g, ''));
+        if (!isFinite(val)) return m;
+        return '$' + (val / USD_RATE).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      });
+    });
+  }
+  root.querySelectorAll('[placeholder]').forEach(el => {
+    const p = el.getAttribute('placeholder'); if (!p) return;
+    const rep = tr(p); if (rep != null && rep !== p) el.setAttribute('placeholder', rep);
+  });
+}
+function setLang(l) {
+  _lang = (l === 'en') ? 'en' : 'id';
+  try { localStorage.setItem('ap-lang', _lang); } catch (e) {}
+  render();
+}
+
 const TRACK_STAGES = ['Placed', 'Verified', 'Processing', 'Quality check', 'Completed'];
 function stageStatus(stage) { return stage >= 4 ? 'Completed' : stage === 0 ? 'Pending' : 'Processing'; }
 function orderStage(id, status) {
@@ -265,7 +470,11 @@ const DATA = {
 /* ---------- Helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
-const money = n => 'Rp' + Number(n).toLocaleString('id-ID');
+function money(n) {
+  n = Number(n) || 0;
+  if (_lang === 'en') { return '$' + (n / USD_RATE).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  return 'Rp' + n.toLocaleString('id-ID');
+}
 function statusBadge(s) {
   const m = { Completed:'success', Processing:'info', Pending:'warning', Failed:'danger', Queued:'neutral' };
   return `<span class="badge badge-${m[s]||'neutral'} badge-dot">${s}</span>`;
@@ -559,7 +768,7 @@ route('/', function () {
     </div></section>
 
     <!-- COMPARE SERVICES -->
-    <section class="section" style="padding-top:0"><div class="container-x">
+    <section class="section" id="features" style="padding-top:0"><div class="container-x">
       <div class="store-head"><h2 class="store-h2">Compare Services</h2>
         <a href="#/#services" class="btn-pill">All Services ${I.arrowRight(15)}</a></div>
       <div class="table-wrapper compare-wrap"><table class="compare-table">
@@ -881,6 +1090,7 @@ function bindNotifications() {
   const open = () => {
     panel.innerHTML = notifPanelHTML();
     panel.style.display = 'block';
+    try { applyI18n(panel); } catch (e) {}
     const ra = $('#notifReadAll');
     if (ra) ra.addEventListener('click', e => { e.stopPropagation(); const s = getStore(); (s.notifications || []).forEach(n => n.read = true); setStore(s); panel.innerHTML = notifPanelHTML(); refreshNotifDot(); });
     $$('.notif-item', panel).forEach(it => it.addEventListener('click', e => {
@@ -1975,6 +2185,7 @@ ROUTES['/admin/activity']._after = bindShell;
    ============================================================ */
 function bindGlobal() {
   try { applyAppSettings(); } catch (e) {}
+  try { applyI18n(); } catch (e) {}
   $$('[data-theme-toggle]').forEach(b => { if (b._bt) return; b._bt = true; b.addEventListener('click', toggleTheme); });
   updateThemeIcons();
   $$('[data-toast]').forEach(b => {
@@ -2135,9 +2346,9 @@ route('/dashboard/settings', function () {
 
   const general = `<div class="card card-pad">
     <h3 style="font-size:16px;margin-bottom:2px">General preferences</h3><p class="muted" style="font-size:12.5px;margin-bottom:6px">Configure your workspace defaults.</p>
-    ${setRow('Language', 'Interface display language', `<select class="select" style="width:200px;height:40px"><option>English (US)</option><option>Bahasa Indonesia</option><option>Español</option></select>`)}
+    ${setRow('Language', 'Interface display language', `<select class="select" id="langSelect" style="width:200px;height:40px"><option value="id">Bahasa Indonesia</option><option value="en">English</option></select>`)}
     ${setRow('Timezone', 'Used for timestamps & reports', `<select class="select" style="width:200px;height:40px"><option>(GMT+7) Jakarta</option><option>(GMT+0) London</option><option>(GMT-5) New York</option></select>`)}
-    ${setRow('Currency', 'Default billing currency', `<select class="select" style="width:200px;height:40px"><option>USD ($)</option><option>IDR (Rp)</option><option>EUR (€)</option></select>`)}
+    ${setRow('Currency', 'Follows the selected language', `<select class="select" id="currencySelect" style="width:200px;height:40px" disabled><option value="IDR">IDR (Rp)</option><option value="USD">USD ($)</option></select>`)}
     ${setRow('Default service', 'Pre-selected on new orders', `<select class="select" style="width:200px;height:40px">${DATA.services.map(s => `<option>${s.name}</option>`).join('')}</select>`)}
     ${setRow('Auto-archive completed orders', 'Hide orders 30 days after completion', sw(true))}
   </div>`;
@@ -2264,6 +2475,7 @@ ROUTES['/dashboard/settings']._after = function () {
       const key = pname + '::' + h4.textContent.trim();
       const cb = row.querySelector('input[type="checkbox"]');
       const sel = row.querySelector('select');
+      if (sel && (sel.id === 'langSelect' || sel.id === 'currencySelect')) return;
       const st = getStore(); st.settings = st.settings || {};
       if (cb) {
         if (key in st.settings) cb.checked = !!st.settings[key];
@@ -2282,6 +2494,12 @@ ROUTES['/dashboard/settings']._after = function () {
     });
   });
   applyAppSettings();
+
+  // --- Language selector (Indonesian / English) + currency follows language ---
+  const langSel = $('#langSelect');
+  if (langSel) { langSel.value = _lang; langSel.addEventListener('change', () => setLang(langSel.value)); }
+  const curSel = $('#currencySelect');
+  if (curSel) curSel.value = (_lang === 'en') ? 'USD' : 'IDR';
 
   // --- Webhook endpoint URL persistence + test ---
   const wh = $('#webhookUrl');
