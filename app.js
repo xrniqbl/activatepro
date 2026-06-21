@@ -272,6 +272,59 @@ const I18N_PAIRS = [
   ['Please enter all 6 digits.', 'Mohon masukkan semua 6 digit.'], ['Back to sign in', 'Kembali ke halaman masuk'],
   ['Company', 'Perusahaan'], ['Knowledge base', 'Basis pengetahuan'],
   ['Enterprise-grade iPhone activation and device service management. Trusted by 12,000+ resellers worldwide.', 'Manajemen aktivasi iPhone dan layanan perangkat kelas enterprise. Dipercaya 12.000+ reseller di seluruh dunia.'],
+  // --- Additional coverage ---
+  ['Cancel', 'Batal'], ['Other', 'Lainnya'], ['Required', 'Wajib'], ['Success', 'Berhasil'],
+  ['Security', 'Keamanan'], ['Any', 'Apa saja'], ['All events', 'Semua event'],
+  ['Carrier unlock', 'Unlock operator'], ['iCloud removal', 'Penghapusan iCloud'], ['iCloud Removal', 'Penghapusan iCloud'],
+  ['Completed (3)', 'Selesai (3)'], ['Failed (1)', 'Gagal (1)'], ['Processing (1)', 'Diproses (1)'], ['All (6)', 'Semua (6)'],
+  ['Production key', 'Kunci produksi'], ['Push & SMS', 'Push & SMS'], ['Last 7 months', '7 bulan terakhir'],
+  ['No orders yet', 'Belum ada pesanan'], ['No users yet', 'Belum ada pengguna'],
+  ['No vouchers yet \u2014 create one above.', 'Belum ada voucher \u2014 buat satu di atas.'],
+  ['No API keys \u2014 create one to get started.', 'Belum ada kunci API \u2014 buat satu untuk memulai.'],
+  ["You're all caught up \u2014 no notifications.", 'Semua sudah terbaca \u2014 tidak ada notifikasi.'],
+  ['Password updated', 'Kata sandi diperbarui'], ['Signed in successfully', 'Berhasil masuk'],
+  ['Signed in as administrator', 'Masuk sebagai administrator'], ['Invoice downloaded', 'Faktur diunduh'],
+  ['Theme preference saved', 'Preferensi tema disimpan'], ['Accent color updated', 'Warna aksen diperbarui'],
+  ['Preference saved', 'Preferensi disimpan'], ['Webhook URL saved', 'URL webhook disimpan'],
+  ['API key copied to clipboard', 'Kunci API disalin ke papan klip'], ['New API key created', 'Kunci API baru dibuat'],
+  ['All invoices exported', 'Semua faktur diekspor'], ['New code sent', 'Kode baru dikirim'],
+  ['Search articles, guides, FAQs\u2026', 'Cari artikel, panduan, FAQ\u2026'],
+  ['Search our knowledge base or open a ticket \u2014 our team replies in under 4 minutes.', 'Cari di basis pengetahuan atau buka tiket \u2014 tim kami membalas dalam waktu kurang dari 4 menit.'],
+  ['Write a reply\u2026', 'Tulis balasan\u2026'], ["Tell us what's happening\u2026", 'Ceritakan apa yang terjadi\u2026'],
+  ['Tap an article to open it', 'Ketuk artikel untuk membukanya'],
+  ['Got it \u2014 a specialist will follow up shortly. Is there anything else I can help with?', 'Baik \u2014 spesialis kami akan menindaklanjuti segera. Ada lagi yang bisa kami bantu?'],
+  ['This article explains', 'Artikel ini menjelaskan'],
+  ['in detail. ActivatePro processes every device request through Apple GSX with full status transparency.', 'secara rinci. ActivatePro memproses setiap permintaan perangkat melalui Apple GSX dengan transparansi status penuh.'],
+  ['Follow the steps below to resolve most issues on your own. If you still need help, open a support ticket and our team responds in under 4 minutes.', 'Ikuti langkah di bawah untuk menyelesaikan sebagian besar masalah sendiri. Jika masih butuh bantuan, buka tiket dan tim kami merespons dalam waktu kurang dari 4 menit.'],
+  ['Confirm your order ID and device model.', 'Konfirmasi ID pesanan dan model perangkat Anda.'],
+  ['Check the live status on the Order tracking page.', 'Cek status langsung di halaman Lacak pesanan.'],
+  ['Review the eligibility and timing notes for your service.', 'Tinjau catatan kelayakan dan waktu untuk layanan Anda.'],
+  ["Contact support if the status hasn't changed within the ETA.", 'Hubungi bantuan jika status belum berubah dalam ETA.'],
+  ['Select the activation or unlock service for', 'Pilih layanan aktivasi atau unlock untuk'],
+  ["Select the exact model you'd like to service.", 'Pilih model persis yang ingin Anda layani.'],
+  ["Don't have an account?", 'Belum punya akun?'], ["Didn't receive a code?", 'Tidak menerima kode?'],
+  ["Didn't get it? Resend email", 'Tidak menerima? Kirim ulang email'], ['open reset link', 'buka tautan reset'],
+  ['. It expires in 30 minutes.', '. Tautan kedaluwarsa dalam 30 menit.'],
+  ["We'll POST event payloads to this URL.", 'Kami akan mengirim payload event ke URL ini.'],
+  ['PDF, JPG or PNG \u00b7 up to 10MB each', 'PDF, JPG atau PNG \u00b7 maks 10MB per file'],
+  ['Your IMEI is checked locally (format + Luhn checksum). When a verification backend is connected, model, Find My, blacklist and warranty are confirmed via a live GSX lookup. We never store full device credentials.', 'IMEI Anda diperiksa secara lokal (format + checksum Luhn). Saat backend verifikasi terhubung, model, Find My, daftar hitam, dan garansi dikonfirmasi melalui pencarian GSX langsung. Kami tidak pernah menyimpan kredensial perangkat lengkap.'],
+  ['\u00a9 2026 ActivatePro Inc. All rights reserved.', '\u00a9 2026 ActivatePro Inc. Hak cipta dilindungi.'],
+  ['United States', 'Amerika Serikat'], ['United Kingdom', 'Britania Raya'], ['Singapore', 'Singapura'],
+  ['Price (IDR)', 'Harga (IDR)'], ['Package', 'Paket'], ['Instant', 'Instan'],
+  ['0% Installment', 'Cicilan 0%'],
+  ['Up to 24 months \u00b7 BCA \u00b7 Mandiri \u00b7 BRI', 'Hingga 24 bulan \u00b7 BCA \u00b7 Mandiri \u00b7 BRI'],
+  ['Instant service \u2014 affordable pricing for all models.', 'Layanan instan \u2014 harga terjangkau untuk semua model.'],
+  ['All iPhone 6 \u2013 iPhone 17', 'Semua iPhone 6 \u2013 iPhone 17'],
+  ['From iPhone 6 to iPhone 17 Pro Max \u2014 across all iOS versions and 80+ carriers worldwide.', 'Dari iPhone 6 hingga iPhone 17 Pro Max \u2014 lintas semua versi iOS dan 80+ carrier di seluruh dunia.'],
+  ['Download PDF', 'Unduh PDF'], ['Download', 'Unduh'],
+  ['Order placed', 'Pesanan dibuat'], ['IMEI verified', 'IMEI terverifikasi'], ['Processing activation', 'Memproses aktivasi'],
+  ['Device ready to activate', 'Perangkat siap diaktifkan'], ['Final verification before delivery', 'Verifikasi akhir sebelum pengiriman'],
+  ['Revenue (MTD)', 'Pendapatan (MTD)'], ['Orders (MTD)', 'Pesanan (MTD)'], ['Success rate', 'Tingkat keberhasilan'],
+  ['Active users', 'Pengguna aktif'], ['Total users', 'Total pengguna'], ['Spend', 'Pengeluaran'], ['Service mix', 'Komposisi layanan'],
+  ['Processing activation request', 'Memproses permintaan aktivasi'], ['IMEI verified via GSX', 'IMEI terverifikasi via GSX'],
+  ['Payment confirmed', 'Pembayaran dikonfirmasi'], ['Live updates', 'Pembaruan langsung'],
+  ['Avg. order value', 'Rata-rata nilai pesanan'], ['Margin', 'Margin'], ['Active services', 'Layanan aktif'],
+  ['Deliveries (24h)', 'Pengiriman (24j)'], ['Avg. latency', 'Latensi rata-rata'], ['Resellers', 'Reseller'],
 ];
 
 let _i18nEN = null, _i18nID = null;
@@ -480,6 +533,7 @@ function statusBadge(s) {
   return `<span class="badge badge-${m[s]||'neutral'} badge-dot">${s}</span>`;
 }
 function toast(msg, icon = 'checkCircle') {
+  try { const r = tr(String(msg)); if (r != null) msg = r; } catch (e) {}
   const root = $('#toast-root');
   const el = document.createElement('div');
   el.className = 'toast';
