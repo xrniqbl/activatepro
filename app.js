@@ -72,8 +72,31 @@ function seedStore() {
   ];
   if (!s.tracking) s.tracking = {};        // orderId -> { stage: 0..4 }
   if (!s.notifications) s.notifications = defaultNotifications();
+  if (!s.settings) s.settings = {};        // settingKey -> value
+  if (!s.apikeys) s.apikeys = [
+    { id: 'k_live', label: 'Production', env: 'Live', key: 'ap_live_' + 'k29f8a3d7b1e4c6f2' },
+    { id: 'k_test', label: 'Test', env: 'Test', key: 'ap_test_' + 'k7c19e0a52b8d4f63' },
+  ];
   setStore(s);
   return s;
+}
+
+/* ---------- Settings helpers (persisted preferences + API keys) ---------- */
+function applyAppSettings() {
+  const s = getStore(); const set = s.settings || {};
+  document.documentElement.classList.toggle('compact', !!set['appearance::Compact density']);
+  document.documentElement.classList.toggle('reduce-motion', !!set['appearance::Reduce motion']);
+  if (set['appearance::accent']) document.documentElement.style.setProperty('--primary', set['appearance::accent']);
+}
+function genApiKey(env) { return (env === 'Live' ? 'ap_live_' : 'ap_test_') + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10); }
+function maskKey(k) { return k.slice(0, 8) + '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' + k.slice(-4); }
+function apiKeyRowsHTML() {
+  const s = seedStore();
+  return (s.apikeys || []).map(k => `<div class="card" style="box-shadow:none;background:var(--surface);padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+    <span style="color:var(--primary)">${I.key(18)}</span>
+    <div style="flex:1;min-width:160px"><div style="font-weight:600;font-size:13px">${k.label} key <span class="badge ${k.env === 'Live' ? 'badge-success' : 'badge-neutral'}" style="font-size:10px">${k.env}</span></div><div class="cell-mono muted" style="font-size:12px">${maskKey(k.key)}</div></div>
+    <button class="btn btn-outline btn-sm" data-copy="${k.id}">${I.copy(14)} Copy</button>
+    <button class="btn btn-ghost btn-sm" data-revoke="${k.id}">Revoke</button></div>`).join('') || '<div class="muted" style="padding:14px;text-align:center;font-size:13px">No API keys \u2014 create one to get started.</div>';
 }
 
 /* ---------- Role / session (demo + backend) ---------- */
@@ -1951,6 +1974,7 @@ ROUTES['/admin/activity']._after = bindShell;
    GLOBAL bindings (toast buttons etc.)
    ============================================================ */
 function bindGlobal() {
+  try { applyAppSettings(); } catch (e) {}
   $$('[data-theme-toggle]').forEach(b => { if (b._bt) return; b._bt = true; b.addEventListener('click', toggleTheme); });
   updateThemeIcons();
   $$('[data-toast]').forEach(b => {
@@ -2159,9 +2183,9 @@ route('/dashboard/settings', function () {
       ${setRow('Reseller volume billing', 'Consolidate into monthly invoice', sw(false))}
     </div>
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Invoices</h3><button class="btn btn-outline btn-sm" data-toast="All invoices exported">${I.download(15)} Export all</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Invoices</h3><button class="btn btn-outline btn-sm" id="invExportAll">${I.download(15)} Export all</button></div>
       <div class="table-wrapper"><table class="data"><thead><tr><th>Invoice</th><th>Date</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>
-      ${[['INV-2048','Jun 18, 2026','Rp1.498.500','Paid'],['INV-2041','Jun 10, 2026','Rp1.350.000','Paid'],['INV-2033','Jun 02, 2026','Rp2.100.000','Paid']].map(r=>`<tr><td class="cell-mono" style="color:var(--primary);font-weight:600">${r[0]}</td><td class="muted">${r[1]}</td><td style="font-weight:600">${r[2]}</td><td><span class="badge badge-success badge-dot">${r[3]}</span></td><td><button class="btn btn-ghost btn-sm" data-toast="Invoice downloaded">${I.download(14)}</button></td></tr>`).join('')}
+      ${[['INV-2048','Jun 18, 2026','Rp1.498.500','Paid'],['INV-2041','Jun 10, 2026','Rp1.350.000','Paid'],['INV-2033','Jun 02, 2026','Rp2.100.000','Paid']].map(r=>`<tr><td class="cell-mono" style="color:var(--primary);font-weight:600">${r[0]}</td><td class="muted">${r[1]}</td><td style="font-weight:600">${r[2]}</td><td><span class="badge badge-success badge-dot">${r[3]}</span></td><td><button class="btn btn-ghost btn-sm" data-inv="${r[0]}" data-inv-date="${r[1]}" data-inv-amt="${r[2]}" title="Download invoice PDF">${I.download(14)}</button></td></tr>`).join('')}
       </tbody></table></div>
     </div>
   </div>`;
@@ -2185,12 +2209,12 @@ route('/dashboard/settings', function () {
 
   const api = `<div style="display:flex;flex-direction:column;gap:16px">
     <div class="card card-pad">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div><h3 style="font-size:16px">API keys</h3><p class="muted" style="font-size:12.5px;margin-top:2px">Use these to authenticate API requests.</p></div><button class="btn btn-primary btn-sm" data-toast="New key generated">${I.plusCircle(15)} Create key</button></div>
-      ${[['Production','ap_live_••••••••••••8f2a','Live'],['Test','ap_test_••••••••••••2c19','Test']].map(k=>`<div class="card" style="box-shadow:none;background:var(--surface);padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap"><span style="color:var(--primary)">${I.key(18)}</span><div style="flex:1;min-width:160px"><div style="font-weight:600;font-size:13px">${k[0]} key <span class="badge ${k[2]==='Live'?'badge-success':'badge-neutral'}" style="font-size:10px">${k[2]}</span></div><div class="cell-mono muted" style="font-size:12px">${k[1]}</div></div><button class="btn btn-outline btn-sm" data-toast="Key copied">${I.copy(14)} Copy</button><button class="btn btn-ghost btn-sm" data-toast="Key revoked">Revoke</button></div>`).join('')}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div><h3 style="font-size:16px">API keys</h3><p class="muted" style="font-size:12.5px;margin-top:2px">Use these to authenticate API requests.</p></div><button class="btn btn-primary btn-sm" id="apiCreateBtn">${I.plusCircle(15)} Create key</button></div>
+      <div id="apiKeyList">${apiKeyRowsHTML()}</div>
     </div>
     <div class="card card-pad">
       <h3 style="font-size:16px;margin-bottom:2px">Webhook endpoint</h3><p class="muted" style="font-size:12.5px;margin-bottom:14px">We'll POST event payloads to this URL.</p>
-      <div class="field" style="margin-bottom:14px"><label class="label">Endpoint URL</label><div style="display:flex;gap:8px"><input class="input cell-mono" value="https://reseller.co/hooks/ap"><button class="btn btn-outline" data-toast="Test event sent">Send test</button></div></div>
+      <div class="field" style="margin-bottom:14px"><label class="label">Endpoint URL</label><div style="display:flex;gap:8px"><input class="input cell-mono" id="webhookUrl" value="https://reseller.co/hooks/ap"><button class="btn btn-outline" id="webhookTest">Send test</button></div></div>
       ${setRow('order.created', 'Fires when an order is placed', sw(true))}
       ${setRow('order.completed', 'Fires on successful activation', sw(true))}
       ${setRow('order.failed', 'Fires when an order fails', sw(true))}
@@ -2218,7 +2242,7 @@ ROUTES['/dashboard/settings']._after = function () {
   const cards = $$('[data-theme]');
   cards.forEach((c, i) => { c.classList.toggle('active', modes[i] === _theme); });
   cards.forEach((c, i) => c.addEventListener('click', () => { cards.forEach(x => x.classList.remove('active')); c.classList.add('active'); applyTheme(modes[i]); toast('Theme preference saved'); }));
-  $$('[data-swatch]').forEach(s => s.addEventListener('click', () => { $$('[data-swatch]').forEach(x => x.classList.remove('active')); s.classList.add('active'); document.documentElement.style.setProperty('--primary', s.style.background); toast('Accent color updated'); }));
+  $$('[data-swatch]').forEach(s => s.addEventListener('click', () => { $$('[data-swatch]').forEach(x => x.classList.remove('active')); s.classList.add('active'); const c = s.style.background; document.documentElement.style.setProperty('--primary', c); const st = getStore(); st.settings = st.settings || {}; st.settings['appearance::accent'] = c; setStore(st); toast('Accent color updated'); }));
   const pf = $('#pwForm'); if (pf) pf.addEventListener('submit', e => {
     e.preventDefault();
     const cur = ($('#pwCurrent') && $('#pwCurrent').value) || '';
@@ -2230,6 +2254,95 @@ ROUTES['/dashboard/settings']._after = function () {
     apiAuthed('/api/auth/change-password', { method: 'POST', body: { current: cur, next: nw } })
       .then(() => { toast('Password updated'); pf.reset(); })
       .catch(err => toast(err.message, 'alert'));
+  });
+
+  // --- Persist every toggle & dropdown across the Settings tabs ---
+  $$('.tab-panel').forEach(panel => {
+    const pname = panel.dataset.panel;
+    $$('.set-row', panel).forEach(row => {
+      const h4 = row.querySelector('.meta h4'); if (!h4) return;
+      const key = pname + '::' + h4.textContent.trim();
+      const cb = row.querySelector('input[type="checkbox"]');
+      const sel = row.querySelector('select');
+      const st = getStore(); st.settings = st.settings || {};
+      if (cb) {
+        if (key in st.settings) cb.checked = !!st.settings[key];
+        cb.addEventListener('change', () => {
+          const s = getStore(); s.settings = s.settings || {}; s.settings[key] = cb.checked; setStore(s);
+          applyAppSettings();
+          toast(h4.textContent.trim() + (cb.checked ? ' enabled' : ' disabled'));
+        });
+      } else if (sel) {
+        if (key in st.settings) sel.value = st.settings[key];
+        sel.addEventListener('change', () => {
+          const s = getStore(); s.settings = s.settings || {}; s.settings[key] = sel.value; setStore(s);
+          toast('Preference saved');
+        });
+      }
+    });
+  });
+  applyAppSettings();
+
+  // --- Webhook endpoint URL persistence + test ---
+  const wh = $('#webhookUrl');
+  if (wh) {
+    const st = getStore(); if (st.settings && st.settings['api::webhookUrl']) wh.value = st.settings['api::webhookUrl'];
+    wh.addEventListener('change', () => { const s = getStore(); s.settings = s.settings || {}; s.settings['api::webhookUrl'] = wh.value; setStore(s); toast('Webhook URL saved'); });
+  }
+  const wt = $('#webhookTest');
+  if (wt) wt.addEventListener('click', () => { pushNotification('webhook', 'Test event sent', 'POST ' + (wh ? wh.value : '') + ' \u2014 200 OK'); toast('Test event sent \u2014 200 OK'); });
+
+  // --- Billing: real invoice PDF downloads ---
+  function invoicePDF(id, date, amt) {
+    const lines = [
+      'ActivatePro Inc.', 'Enterprise iPhone Activation & Device Services', '',
+      'INVOICE', 'Invoice No : ' + id, 'Date       : ' + date,
+      'Billed to  : ' + (DATA.user.email || ''), '',
+      '----------------------------------------------',
+      'Status     : Paid',
+      'Amount     : ' + amt,
+      '----------------------------------------------',
+      'Thank you for your business.',
+      'Payments are encrypted and PCI-DSS compliant.',
+    ];
+    downloadInvoicePDF(lines, 'ActivatePro-' + id + '.pdf');
+  }
+  $$('[data-inv]').forEach(b => b.addEventListener('click', () => {
+    invoicePDF(b.dataset.inv, b.dataset.invDate, b.dataset.invAmt);
+    pushNotification('file', 'Invoice downloaded', b.dataset.inv + ' saved as PDF.');
+    toast('Invoice ' + b.dataset.inv + ' downloaded');
+  }));
+  const exAll = $('#invExportAll');
+  if (exAll) exAll.addEventListener('click', () => {
+    $$('[data-inv]').forEach(b => invoicePDF(b.dataset.inv, b.dataset.invDate, b.dataset.invAmt));
+    toast('All invoices exported');
+  });
+
+  // --- API keys: create / copy / revoke (store-backed) ---
+  function bindKeyRows() {
+    $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+      const s = getStore(); const k = (s.apikeys || []).find(x => x.id === b.dataset.copy); if (!k) return;
+      try { await navigator.clipboard.writeText(k.key); toast('API key copied to clipboard'); }
+      catch (e) { toast('Copy failed \u2014 select the key manually', 'alert'); }
+    }));
+    $$('[data-revoke]').forEach(b => b.addEventListener('click', () => {
+      const s = getStore(); const idx = (s.apikeys || []).findIndex(x => x.id === b.dataset.revoke);
+      if (idx < 0) return;
+      const lbl = s.apikeys[idx].label; s.apikeys.splice(idx, 1); setStore(s);
+      const list = $('#apiKeyList'); if (list) { list.innerHTML = apiKeyRowsHTML(); bindKeyRows(); }
+      toast(lbl + ' key revoked');
+    }));
+  }
+  bindKeyRows();
+  const ck = $('#apiCreateBtn');
+  if (ck) ck.addEventListener('click', () => {
+    const s = getStore(); s.apikeys = s.apikeys || [];
+    const id = 'k_' + Date.now();
+    const newKey = { id: id, label: 'Key ' + (s.apikeys.length + 1), env: 'Live', key: genApiKey('Live') };
+    s.apikeys.unshift(newKey); setStore(s);
+    const list = $('#apiKeyList'); if (list) { list.innerHTML = apiKeyRowsHTML(); bindKeyRows(); }
+    pushNotification('key', 'New API key created', newKey.label + ' (' + newKey.env + ')');
+    toast('New API key created');
   });
 };
 

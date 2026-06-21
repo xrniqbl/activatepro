@@ -715,3 +715,20 @@ table.data tbody tr:last-child td { border-bottom: none; }
   .voucher-form { grid-template-columns: 1fr 1fr !important; }
   .voucher-form > button { grid-column: 1 / -1; }
 }
+
+/* ============================================================
+   Settings: compact density + reduce motion (added)
+   ============================================================ */
+.compact .card-pad { padding: 14px 16px; }
+.compact .data th,
+.compact .data td { padding-top: 7px; padding-bottom: 7px; }
+.compact .set-row { padding-top: 10px; padding-bottom: 10px; }
+.compact .stat-card { padding: 14px; }
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  transition: none !important;
+  animation: none !important;
+  scroll-behavior: auto !important;
+}
