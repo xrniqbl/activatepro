@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS orders (
 try {
   const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
   if (!cols.includes('role')) db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
+  if (!cols.includes('whatsapp')) db.exec("ALTER TABLE users ADD COLUMN whatsapp TEXT");
 } catch (e) { console.warn('users migration skipped:', e.message); }
 
 /* ---------- Users ---------- */
@@ -91,8 +92,10 @@ function setOrderStatus(id, status, paymentRef) { _setOrderStatus.run(status, pa
 
 /* ---------- Profile & role ---------- */
 const _updateName = db.prepare('UPDATE users SET name = ? WHERE id = ?');
+const _updateWhatsapp = db.prepare('UPDATE users SET whatsapp = ? WHERE id = ?');
 const _setRole = db.prepare('UPDATE users SET role = ? WHERE email = ?');
 function updateName(id, name) { _updateName.run(name, id); return _getUserById.get(id); }
+function updateWhatsapp(id, whatsapp) { _updateWhatsapp.run(whatsapp || null, id); return _getUserById.get(id); }
 function setRole(email, role) { _setRole.run(role, email); }
 
 /* ---------- Admin queries ---------- */
@@ -113,5 +116,5 @@ function adminStats() {
 module.exports = {
   db, createUser, getUserByEmail, getUserById, markVerified, updatePassword,
   createOrder, getOrder, listOrders, setOrderStatus, nextOrderId,
-  updateName, setRole, listAllUsers, listAllOrders, adminStats,
+  updateName, updateWhatsapp, setRole, listAllUsers, listAllOrders, adminStats,
 };

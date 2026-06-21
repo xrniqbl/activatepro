@@ -32,7 +32,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
 if (!process.env.JWT_SECRET) console.warn('JWT_SECRET not set — using an insecure dev secret. Set JWT_SECRET in production.');
 
 function signToken(user) { return jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' }); }
-function publicUser(u) { return { id: u.id, email: u.email, name: u.name, verified: !!u.verified, role: u.role || 'user' }; }
+function publicUser(u) { return { id: u.id, email: u.email, name: u.name, verified: !!u.verified, role: u.role || 'user', whatsapp: u.whatsapp || '' }; }
 function authRequired(req, res, next) {
   const h = req.headers.authorization || '';
   const tok = h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -321,6 +321,31 @@ async function sendBrevoEmail({ to, toName, subject, html, text }) {
   return data; // { messageId }
 }
 
+// Notify all configured admins by email when a customer places an order.
+async function emailAdminNewOrder(order, customer) {
+  if (!ADMIN_EMAILS.length) return;
+  if (!process.env.BREVO_API_KEY || !process.env.BREVO_SENDER_EMAIL) return;
+  const esc = s => String(s == null ? '-' : s).replace(/</g, '&lt;');
+  const rows = [
+    ['Customer', customer.name || '-'], ['Email', customer.email || '-'],
+    ['WhatsApp', customer.whatsapp || '-'], ['Service', order.service || '-'],
+    ['Device', order.device || '-'], ['IMEI', order.imei || '-'],
+    ['Amount', 'Rp' + Number(order.amount || 0).toLocaleString('id-ID')], ['Order ID', order.id || '-'],
+  ];
+  const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
+    <div style="background:#0a0a0a;color:#fff;padding:20px 24px;border-radius:12px 12px 0 0">
+      <h2 style="margin:0;font-size:18px">New order received</h2>
+      <p style="margin:6px 0 0;opacity:.7;font-size:13px">ActivatePro</p></div>
+    <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #eee;border-top:0">
+      ${rows.map(r => `<tr><td style="padding:10px 16px;color:#667;font-size:13px;border-bottom:1px solid #f0f0f0;width:120px">${r[0]}</td><td style="padding:10px 16px;font-size:13px;font-weight:600;border-bottom:1px solid #f0f0f0">${esc(r[1])}</td></tr>`).join('')}
+    </table>
+    <p style="color:#94a3b8;font-size:12px;margin:16px 0">Contact the customer on WhatsApp to proceed.</p></div>`;
+  const text = rows.map(r => r[0] + ': ' + r[1]).join('\n');
+  await Promise.allSettled(ADMIN_EMAILS.map(to => sendBrevoEmail({
+    to, subject: 'New order ' + (order.id || '') + ' \u2014 ' + (order.service || ''), html, text,
+  })));
+}
+
 // Generate + store an OTP (returns the code so the same one is reused on dev fallback).
 function makeOtp(email) {
   const code = genOtp();
@@ -412,6 +437,12 @@ app.get('/api/auth/me', authRequired, (req, res) => {
 app.post('/api/orders', authRequired, (req, res) => {
   const b = req.body || {};
   if (!b.service && !b.device) return res.status(400).json({ error: 'device and service are required' });
+  const user = dbi.getUserById(req.user.uid);
+  const whatsapp = String(b.whatsapp || (user && user.whatsapp) || '').trim();
+  // Persist the WhatsApp number on the profile when newly supplied at checkout.
+  if (b.whatsapp && user && String(b.whatsapp).trim() !== (user.whatsapp || '')) {
+    try { dbi.updateWhatsapp(req.user.uid, whatsapp); } catch (e) {}
+  }
   const order = dbi.createOrder({
     user_id: req.user.uid, device: b.device, service: b.service, imei: b.imei,
     amount: parseInt(b.amount, 10) || 0, eta: b.eta || 'Queued', status: b.status || 'Pending',
@@ -419,6 +450,9 @@ app.post('/api/orders', authRequired, (req, res) => {
   features.logActivity({ actor: req.user.email, action: 'placed', target: 'order ' + order.id, level: 'success', ip: features.clientIp(req) });
   features.pushNotification(req.user.uid, 'package', 'Order ' + order.id + ' placed', (order.service || '') + ' · ' + (order.device || ''));
   features.emitWebhook(req.user.uid, 'order.created', { order_id: order.id, service: order.service, device: order.device, amount: order.amount, status: order.status });
+  // Email the admin(s) the customer's name, email and WhatsApp (fire-and-forget).
+  emailAdminNewOrder(order, { name: user && user.name, email: req.user.email, whatsapp })
+    .catch(e => console.error('[admin-email]', e && e.message));
   return res.json({ ok: true, order });
 });
 app.get('/api/orders', authRequired, (req, res) => {
@@ -487,11 +521,14 @@ app.post('/api/uploads', authRequired, (req, res) => {
   });
 });
 
-/* ---------- Profile: update name (auth required) ---------- */
+/* ---------- Profile: update name + WhatsApp (auth required) ---------- */
 app.patch('/api/profile', authRequired, (req, res) => {
-  const name = String((req.body && req.body.name) || '').trim();
+  const b = req.body || {};
+  const name = String(b.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Name is required' });
-  const user = dbi.updateName(req.user.uid, name);
+  dbi.updateName(req.user.uid, name);
+  if (b.whatsapp !== undefined) dbi.updateWhatsapp(req.user.uid, String(b.whatsapp || '').trim());
+  const user = dbi.getUserById(req.user.uid);
   return res.json({ ok: true, user: publicUser(user) });
 });
 

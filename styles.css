@@ -201,6 +201,12 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .lang-opt.active { color: #fff; background: #0a0a0a; }
 .dark .lang-opt.active { color: #0a0a0a; background: #fff; }
 
+/* ---------- Clickable avatar (opens profile) ---------- */
+.avatar-link { text-decoration: none; border-radius: 999px; transition: opacity .15s, box-shadow .15s; }
+.avatar-link:hover { opacity: .88; }
+.avatar-link:hover .avatar { box-shadow: 0 0 0 3px var(--primary-50); }
+.avatar-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
 /* ---------- Hero ---------- */
 .hero-bg {
   background:

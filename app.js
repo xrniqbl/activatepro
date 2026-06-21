@@ -127,7 +127,10 @@ function setDemoUser(email, name) {
   try { localStorage.setItem(DEMO_USER_KEY, JSON.stringify(u)); } catch (err) {}
   return u;
 }
-function loadDemoUser() { try { const u = JSON.parse(localStorage.getItem(DEMO_USER_KEY)); if (u && u.email) DATA.user = u; } catch (e) {} }
+function loadDemoUser() {
+  try { const u = JSON.parse(localStorage.getItem(DEMO_USER_KEY)); if (u && u.email) DATA.user = u; } catch (e) {}
+  try { const wa = localStorage.getItem('ap-whatsapp'); if (wa && !DATA.user.whatsapp) DATA.user.whatsapp = wa; } catch (e) {}
+}
 function isAdmin() { return !!(DATA.user && DATA.user.role === 'admin'); }
 
 /* ---------- Order tracking stages (admin -> customer) ---------- */
@@ -424,7 +427,9 @@ async function loadMe() {
   try {
     const { user } = await apiAuthed('/api/auth/me');
     if (user) {
-      DATA.user = { name: user.name || user.email, email: user.email, initials: initialsOf(user.name || user.email), role: user.role || 'user' };
+      const wa = user.whatsapp || DATA.user.whatsapp || (function () { try { return localStorage.getItem('ap-whatsapp') || ''; } catch (e) { return ''; } })();
+      DATA.user = { name: user.name || user.email, email: user.email, initials: initialsOf(user.name || user.email), role: user.role || 'user', whatsapp: wa };
+      if (wa) { try { localStorage.setItem('ap-whatsapp', wa); } catch (e) {} }
       // Re-render so sidebar/profile reflect the real account.
       try { render(); } catch (e) {}
     }
@@ -667,18 +672,100 @@ function openModal(title, bodyHTML) {
   return overlay;
 }
 
-/* ---------- Minimal client-side PDF generator (no external libs) ---------- */
-function downloadInvoicePDF(lines, filename) {
-  const esc = t => String(t).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-  let body = 'BT\n/F1 11 Tf\n16 TL\n50 790 Td\n';
-  (lines || []).forEach(ln => { body += '(' + esc(ln) + ') Tj\nT*\n'; });
-  body += 'ET';
+/* ---------- Modern client-side PDF invoice generator (no external libs) ---------- */
+/* Accepts a structured invoice object:
+   { number, date, status, billTo:{name,email,whatsapp}, items:[{name,detail,sub,amount}],
+     subtotal, tax, discount, discountCode, total }
+   A legacy array of text lines is still accepted for backward compatibility. */
+function downloadInvoicePDF(inv, filename) {
+  if (Array.isArray(inv)) inv = { _legacy: inv };
+  inv = inv || {};
+  const PW = 595, PH = 842, ML = 48, MR = 547;
+  // Sanitize to WinAnsi-safe ASCII so byte length == string length (stream /Length).
+  const esc = t => String(t == null ? '' : t)
+    .replace(/[\u2012-\u2015]/g, '-').replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"').replace(/\u00b7/g, '|').replace(/\u00d7/g, 'x')
+    .replace(/[^\x20-\x7E]/g, '')
+    .replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const tw = (str, size, bold) => esc(str).length * size * (bold ? 0.56 : 0.5);
+  const T = top => PH - top;
+  const ops = [];
+  const rect = (x, top, w, h, c) => ops.push(`${c} rg ${x.toFixed(2)} ${(T(top) - h).toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f`);
+  const hline = (x1, x2, top, c, wd) => ops.push(`${(wd || 0.8)} w ${c} RG ${x1.toFixed(2)} ${T(top).toFixed(2)} m ${x2.toFixed(2)} ${T(top).toFixed(2)} l S`);
+  const text = (x, top, str, size, bold, c) => ops.push(`BT ${c || '0.09 0.09 0.11'} rg /${bold ? 'F2' : 'F1'} ${size} Tf 1 0 0 1 ${x.toFixed(2)} ${(T(top) - size).toFixed(2)} Tm (${esc(str)}) Tj ET`);
+  const textR = (xr, top, str, size, bold, c) => text(xr - tw(str, size, bold), top, str, size, bold, c);
+
+  const DARK = '0.06 0.06 0.07', GRAY = '0.42 0.45 0.50', SUB = '0.70 0.72 0.76',
+        LIGHT = '0.96 0.96 0.97', LINE = '0.85 0.86 0.88', WHITE = '1 1 1', INK = '0.09 0.09 0.11';
+
+  // Legacy fallback: just dump the text lines.
+  if (inv._legacy) {
+    let ly = 70; inv._legacy.forEach(ln => { text(ML, ly, ln, 11, false, INK); ly += 16; });
+  } else {
+    // Header band
+    rect(0, 0, PW, 120, DARK);
+    text(ML, 48, 'ActivatePro', 23, true, WHITE);
+    text(ML, 76, 'iPhone Activation & Device Services', 9.5, false, SUB);
+    textR(MR, 46, 'INVOICE', 27, true, WHITE);
+    textR(MR, 80, (inv.number || '') + '   |   ' + (inv.date || ''), 9.5, false, SUB);
+
+    // Parties + meta
+    const y = 162;
+    text(ML, y, 'BILLED TO', 8.5, true, GRAY);
+    text(ML, y + 17, inv.billTo && inv.billTo.name || '-', 13, true, INK);
+    text(ML, y + 34, inv.billTo && inv.billTo.email || '-', 10, false, GRAY);
+    if (inv.billTo && inv.billTo.whatsapp) text(ML, y + 50, 'WhatsApp  ' + inv.billTo.whatsapp, 10, false, GRAY);
+
+    const rx = 372;
+    text(rx, y, 'INVOICE NO', 8.5, true, GRAY); textR(MR, y, inv.number || '-', 10.5, true, INK);
+    text(rx, y + 18, 'DATE', 8.5, true, GRAY); textR(MR, y + 18, inv.date || '-', 10.5, false, INK);
+    text(rx, y + 36, 'STATUS', 8.5, true, GRAY); textR(MR, y + 36, inv.status || 'Awaiting payment', 10.5, false, INK);
+
+    // Items table
+    const ty = 256;
+    rect(ML, ty, MR - ML, 26, LIGHT);
+    text(ML + 12, ty + 8, 'DESCRIPTION', 8.5, true, GRAY);
+    text(312, ty + 8, 'DETAILS', 8.5, true, GRAY);
+    textR(MR - 12, ty + 8, 'AMOUNT', 8.5, true, GRAY);
+    let ry = ty + 26;
+    const items = (inv.items && inv.items.length) ? inv.items : [{ name: 'Service', detail: '', amount: '' }];
+    items.forEach(it => {
+      const tall = !!it.sub;
+      text(ML + 12, ry + 13, it.name || '-', 11, true, INK);
+      if (tall) text(ML + 12, ry + 28, it.sub, 8.5, false, GRAY);
+      text(312, ry + 13, it.detail || '', 9.5, false, GRAY);
+      textR(MR - 12, ry + 13, it.amount || '', 11, false, INK);
+      ry += tall ? 42 : 32;
+      hline(ML, MR, ry, LINE, 0.6);
+    });
+
+    // Totals
+    let sy = ry + 22;
+    const sx = 340;
+    const row = (label, val, bold) => { text(sx, sy, label, bold ? 10.5 : 10, bold, bold ? INK : GRAY); textR(MR, sy, val, bold ? 10.5 : 10, bold, bold ? INK : GRAY); sy += 20; };
+    row('Subtotal', inv.subtotal || '');
+    row('PPN (11%)', inv.tax || '');
+    if (inv.discount) row('Discount' + (inv.discountCode ? ' (' + inv.discountCode + ')' : ''), '-' + inv.discount);
+    sy += 6;
+    rect(sx - 10, sy - 2, MR - (sx - 10), 36, DARK);
+    text(sx, sy + 11, 'AMOUNT DUE', 10.5, true, WHITE);
+    textR(MR - 12, sy + 11, inv.total || '', 14, true, WHITE);
+
+    // Footer
+    hline(ML, MR, 776, LINE, 0.8);
+    text(ML, 790, 'Thank you for your business.', 9.5, true, INK);
+    text(ML, 804, 'Payments are encrypted and PCI-DSS compliant. This is a system-generated invoice.', 8.5, false, GRAY);
+    textR(MR, 798, 'ActivatePro Inc.', 9, false, GRAY);
+  }
+
+  const content = ops.join('\n');
   const objs = [
     '<</Type/Catalog/Pages 2 0 R>>',
     '<</Type/Pages/Kids[3 0 R]/Count 1>>',
-    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 5 0 R>>>>/Contents 4 0 R>>',
-    '<</Length ' + body.length + '>>\nstream\n' + body + '\nendstream',
-    '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>',
+    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 ' + PW + ' ' + PH + ']/Resources<</Font<</F1 5 0 R/F2 6 0 R>>>>/Contents 4 0 R>>',
+    '<</Length ' + content.length + '>>\nstream\n' + content + '\nendstream',
+    '<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>',
+    '<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Bold/Encoding/WinAnsiEncoding>>',
   ];
   let pdf = '%PDF-1.4\n';
   const offsets = [];
@@ -1137,8 +1224,10 @@ function shell(activeKey, nav, title, subtitle, content) {
       <nav style="flex:1;overflow-y:auto;padding:12px 12px 8px">${links}</nav>
       <div style="padding:12px;border-top:1px solid var(--border)">
         <div class="card" style="padding:12px;display:flex;align-items:center;gap:10px;box-shadow:none;background:var(--surface)">
-          <span class="avatar" style="width:34px;height:34px">${DATA.user.initials}</span>
-          <div style="min-width:0;flex:1"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${DATA.user.name}</div><div class="muted" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${DATA.user.email}</div></div>
+          <a href="#/dashboard/profile" class="avatar-link" style="display:flex;align-items:center;gap:10px;min-width:0;flex:1" title="View profile">
+            <span class="avatar" style="width:34px;height:34px">${DATA.user.initials}</span>
+            <div style="min-width:0;flex:1"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${DATA.user.name}</div><div class="muted" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${DATA.user.email}</div></div>
+          </a>
           <a href="#/login" class="btn btn-ghost btn-icon btn-sm" title="Sign out">${I.logout(17)}</a>
         </div>
       </div>
@@ -1157,7 +1246,7 @@ function shell(activeKey, nav, title, subtitle, content) {
             <div id="notifPanel" class="notif-panel" style="display:none"></div>
           </div>
           <a href="#/dashboard/new-order" class="btn btn-primary btn-sm hidden sm:inline-flex">${I.plusCircle(15)} New order</a>
-          <span class="avatar" style="width:36px;height:36px">${DATA.user.initials}</span>
+          <a href="#/dashboard/profile" class="avatar-link" title="View profile" aria-label="View profile"><span class="avatar" style="width:36px;height:36px">${DATA.user.initials}</span></a>
         </div>
       </header>
       <main class="content fade-in">${content}</main>
@@ -1748,35 +1837,61 @@ ROUTES['/dashboard/checkout']._after = function () {
     const disc = applied ? applied.discount : 0;
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const lines = [
-      'ActivatePro Inc.', 'Enterprise iPhone Activation & Device Services', '',
-      'INVOICE', 'Invoice No : INV-2049', 'Date       : ' + dateStr,
-      'Billed to  : ' + (DATA.user.email || ''), '',
-      '----------------------------------------------',
-      'Service    : ' + (svc0.name || ''),
-      'Device     : ' + (WIZ.device || 'iPhone 15 Pro'),
-      'IMEI       : ' + (WIZ.imei || '-'),
-      '----------------------------------------------',
-      'Subtotal   : ' + money(base),
-      'PPN (11%)  : ' + money(tax),
-      'Discount   : -' + money(disc) + (applied ? '  (' + applied.code + ')' : ''),
-      '----------------------------------------------',
-      'AMOUNT DUE : ' + money(total), '',
-      'Thank you for your business.',
-      'Payments are encrypted and PCI-DSS compliant.',
-    ];
-    downloadInvoicePDF(lines, 'ActivatePro-INV-2049.pdf');
+    const wa = DATA.user.whatsapp || (function () { try { return localStorage.getItem('ap-whatsapp') || ''; } catch (e) { return ''; } })();
+    const inv = {
+      number: 'INV-2049',
+      date: dateStr,
+      status: 'Awaiting payment',
+      billTo: { name: DATA.user.name || '', email: DATA.user.email || '', whatsapp: wa },
+      items: [{
+        name: svc0.name || 'Service',
+        detail: WIZ.device || 'iPhone 15 Pro',
+        sub: WIZ.imei ? 'IMEI ' + WIZ.imei : '',
+        amount: money(base),
+      }],
+      subtotal: money(base),
+      tax: money(tax),
+      discount: disc ? money(disc) : '',
+      discountCode: applied ? applied.code : '',
+      total: money(total),
+    };
+    downloadInvoicePDF(inv, 'ActivatePro-INV-2049.pdf');
     pushNotification('file', 'Invoice downloaded', 'INV-2049 saved as PDF (' + money(total) + ').');
     toast('Invoice downloaded');
   });
 
   $('#payBtn').addEventListener('click', async () => {
-    if (!CONFIG.apiBase || !getToken()) { toast('Payment successful — order placed!'); setTimeout(() => navigate('/dashboard/tracking'), 700); return; }
+    // WhatsApp number is mandatory so the admin can be notified with the
+    // customer's name, email and number whenever an order is placed.
+    const wa = DATA.user.whatsapp || (function () { try { return localStorage.getItem('ap-whatsapp') || ''; } catch (e) { return ''; } })();
+    if (!wa) {
+      toast('Lengkapi nomor WhatsApp di profil sebelum memesan', 'alert');
+      setTimeout(() => navigate('/dashboard/profile'), 700);
+      return;
+    }
     const svc = DATA.services.find(s => s.id === WIZ.service) || {};
     const amount = priceFor(WIZ.service, WIZ.device) || svc.price || 0;
+    // Demo / offline mode: still capture the order + contact details for the admin.
+    if (!CONFIG.apiBase || !getToken()) {
+      try {
+        const s = seedStore();
+        s.adminInbox = s.adminInbox || [];
+        s.adminInbox.unshift({
+          at: new Date().toISOString(),
+          name: DATA.user.name || '', email: DATA.user.email || '', whatsapp: wa,
+          service: svc.name || WIZ.service || '', device: WIZ.device || '', imei: WIZ.imei || '', amount,
+        });
+        setStore(s);
+      } catch (e) {}
+      pushNotification('package', 'Pesanan terkirim ke admin', (DATA.user.name || '') + ' · ' + wa);
+      toast('Pesanan dibuat — detail kontak terkirim ke admin');
+      setTimeout(() => navigate('/dashboard/tracking'), 700);
+      return;
+    }
     const btn = $('#payBtn'); btn.disabled = true;
     try {
-      const { order } = await apiAuthed('/api/orders', { method: 'POST', body: { device: WIZ.device, service: svc.name || WIZ.service, imei: WIZ.imei, amount, eta: svc.eta } });
+      // whatsapp is forwarded so the backend can notify the admin by email.
+      const { order } = await apiAuthed('/api/orders', { method: 'POST', body: { device: WIZ.device, service: svc.name || WIZ.service, imei: WIZ.imei, amount, eta: svc.eta, whatsapp: wa } });
       if (CONFIG.midtransClientKey) { await payWithMidtrans(order.id); }
       toast('Order placed!'); setTimeout(() => navigate('/dashboard/tracking'), 700);
     } catch (err) { toast(err.message); btn.disabled = false; }
@@ -2504,7 +2619,7 @@ route('/dashboard/profile', function () {
             </div>
             <div class="field"><label class="label">Email address</label><div class="input-group"><span class="input-icon">${I.mail(17)}</span><input class="input" value="${u.email}"></div></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="wiz-grid">
-              <div class="field"><label class="label">Phone</label><div class="input-group"><span class="input-icon">${I.phone(17)}</span><input class="input" value="+62 812 3456 7890"></div></div>
+              <div class="field"><label class="label">WhatsApp number <span style="color:var(--danger)">*</span></label><div class="input-group"><span class="input-icon">${I.phone(17)}</span><input class="input" id="pfWhatsapp" type="tel" required placeholder="+62 812 3456 7890" value="${u.whatsapp || ''}"></div><div class="muted" style="font-size:11px;margin-top:5px">Wajib \u2014 admin menghubungi Anda di nomor ini saat ada pesanan.</div></div>
               <div class="field"><label class="label">Company</label><div class="input-group"><span class="input-icon">${I.building(17)}</span><input class="input" value="MobileFix Co."></div></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="wiz-grid">
@@ -2556,10 +2671,18 @@ ROUTES['/dashboard/profile']._after = function () {
     const first = ($('#pfFirst') && $('#pfFirst').value.trim()) || '';
     const last = ($('#pfLast') && $('#pfLast').value.trim()) || '';
     const name = (first + ' ' + last).trim();
+    const wa = ($('#pfWhatsapp') && $('#pfWhatsapp').value.trim()) || '';
+    // WhatsApp is mandatory: admin needs it to contact the customer on every order.
+    if (!wa) { toast('Nomor WhatsApp wajib diisi', 'alert'); const w = $('#pfWhatsapp'); if (w) w.focus(); return; }
+    if (!/^[+]?[\d][\d\s().-]{6,}$/.test(wa)) { toast('Masukkan nomor WhatsApp yang valid', 'alert'); const w = $('#pfWhatsapp'); if (w) w.focus(); return; }
+    // Persist WhatsApp locally so it survives reloads and is available at checkout.
+    DATA.user.whatsapp = wa;
+    try { localStorage.setItem('ap-whatsapp', wa); } catch (err) {}
+    try { localStorage.setItem(DEMO_USER_KEY, JSON.stringify(DATA.user)); } catch (err) {}
     if (!CONFIG.apiBase || !getToken()) { toast('Profile saved successfully'); return; }
     if (!name) { toast('Name is required', 'alert'); return; }
-    apiAuthed('/api/profile', { method: 'PATCH', body: { name } })
-      .then(d => { if (d && d.user) { DATA.user = { name: d.user.name, email: d.user.email, initials: initialsOf(d.user.name), role: d.user.role }; } toast('Profile saved successfully'); render(); })
+    apiAuthed('/api/profile', { method: 'PATCH', body: { name, whatsapp: wa } })
+      .then(d => { if (d && d.user) { DATA.user = { name: d.user.name, email: d.user.email, initials: initialsOf(d.user.name), role: d.user.role, whatsapp: d.user.whatsapp || wa }; } toast('Profile saved successfully'); render(); })
       .catch(err => toast(err.message, 'alert'));
   });
 };
