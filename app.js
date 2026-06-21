@@ -394,6 +394,8 @@ route('/', function () {
 
     <!-- HERO -->
     <section class="store-hero">
+      <img class="store-hero-bgimg" src="assets/hero-iphones.jpg" alt="iPhone activation" loading="eager">
+      <div class="store-hero-overlay"></div>
       <div class="container-x store-hero-grid">
         <div class="store-hero-copy fade-in">
           <h1 class="store-hero-title">Activate &amp; Unlock<br>Any <span>iPhone</span></h1>
@@ -406,9 +408,6 @@ route('/', function () {
             ${[['shield','100% Original','IMEI-based methods'],['checkCircle','Garansi Resmi','No-fix-no-fee'],['zap','Proses Cepat','1\u201324 jam selesai']].map(b=>`
               <div class="hb"><span class="hb-ico">${I[b[0]]?I[b[0]](18):I.shield(18)}</span><div><div class="hb-h">${b[0]==='shield'?'100% Original':b[0]==='checkCircle'?'Garansi Resmi':'Proses Cepat'}</div><div class="hb-s">${b[2]}</div></div></div>`).join('')}
           </div>
-        </div>
-        <div class="store-hero-img fade-in">
-          <img src="assets/hero-iphones.jpg" alt="iPhone activation" loading="eager">
         </div>
       </div>
       <div class="store-dots"><span class="dot active"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
