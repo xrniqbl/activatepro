@@ -285,10 +285,6 @@ function marketingFooter() {
         <div style="max-width:300px">
           ${brandLogo(true)}
           <p style="color:#9aa3ad;font-size:13.5px;margin-top:16px;line-height:1.7">Enterprise-grade iPhone activation and device service management. Trusted by 12,000+ resellers worldwide.</p>
-          <div style="display:flex;gap:8px;margin-top:18px">
-            <span class="badge" style="background:#1c1c1f;color:#d4d4d8">${I.shield(13)} SOC 2 Type II</span>
-            <span class="badge" style="background:#1c1c1f;color:#d4d4d8">256-bit SSL</span>
-          </div>
         </div>
         ${col('Product', [['Pricing','#/#services'],['Supported devices','#/#devices'],['New order','#/dashboard/new-order'],['Order tracking','#/dashboard/tracking']])}
         ${col('Company', [['About','#/'],['Support center','#/support'],['Admin console','#/admin'],['API & webhooks','#/admin/webhooks']])}
@@ -297,7 +293,6 @@ function marketingFooter() {
       <div class="divider" style="background:#222;margin:40px 0 24px"></div>
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;color:#7a828c;font-size:12.5px">
         <span>© 2026 ActivatePro Inc. All rights reserved.</span>
-        <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:999px;background:#d4d4d8;display:inline-block"></span> All systems operational</span>
       </div>
     </div>
   </footer>`;
