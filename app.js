@@ -563,9 +563,20 @@ const ROUTES = {};
 let _route = ((location.hash || '#/').slice(1).split('#')[0]) || '/';
 function route(path, fn) { ROUTES[path] = fn; }
 function currentPath() { return _route; }
-function navigate(path) {
+function navigate(path, opts) {
+  opts = opts || {};
   _route = path || '/';
-  try { history.replaceState(null, '', '#' + _route); } catch (e) {}
+  // Push a real history entry so the browser Back button walks back through
+  // the in-app routes (returning to the landing page) instead of leaving the
+  // site entirely. Use replace only for auth->dashboard hand-offs so Back from
+  // the dashboard skips the login/verify screen and lands on the page before it.
+  try {
+    if (opts.replace) history.replaceState({ r: _route }, '', '#' + _route);
+    else history.pushState({ r: _route }, '', '#' + _route);
+  } catch (e) {
+    // Sandboxed iframes can block the History API; fall back to the hash.
+    try { location.hash = '#' + _route; } catch (e2) {}
+  }
   render();
 }
 function render() {
@@ -601,7 +612,14 @@ document.addEventListener('click', function (e) {
   navigate(target);
   if (section) { const s = document.getElementById(section); if (s) setTimeout(() => s.scrollIntoView({ behavior: 'smooth' }), 60); }
 });
-// Fallback for back/forward + deep links.
+// Back/forward navigation: pushState entries fire popstate. Re-render the
+// route the browser restored so Back from the dashboard returns to the
+// previous in-app page (e.g. the landing page) rather than exiting the app.
+window.addEventListener('popstate', function () {
+  const p = ((location.hash || '#/').slice(1).split('#')[0]) || '/';
+  if (p !== _route) { _route = p; render(); }
+});
+// Fallback for deep links + environments where the History API is unavailable.
 window.addEventListener('hashchange', function () {
   const p = ((location.hash || '#/').slice(1).split('#')[0]) || '/';
   if (p !== _route) { _route = p; render(); }
@@ -670,6 +688,13 @@ function brandLogo(dark = false) {
     <span style="font-weight:800;font-size:17px;letter-spacing:-.02em;color:${dark?'#fff':'var(--foreground)'}">ActivatePro</span>
   </a>`;
 }
+// Segmented ID / EN language switcher used in the navbar.
+function langToggle() {
+  return `<div class="lang-toggle" role="group" aria-label="Language">
+    <button type="button" class="lang-opt ${_lang === 'id' ? 'active' : ''}" data-lang="id" aria-pressed="${_lang === 'id'}">ID</button>
+    <button type="button" class="lang-opt ${_lang === 'en' ? 'active' : ''}" data-lang="en" aria-pressed="${_lang === 'en'}">EN</button>
+  </div>`;
+}
 function marketingNav() {
   return `<header class="nav"><div class="container-x" style="display:flex;align-items:center;justify-content:space-between;height:68px">
     ${brandLogo()}
@@ -681,6 +706,7 @@ function marketingNav() {
       <a class="nav-link" href="#/support">Support</a>
     </nav>
     <div style="display:flex;align-items:center;gap:10px">
+      ${langToggle()}
       ${themeBtn()}
       <a class="btn btn-ghost btn-sm hidden sm:inline-flex" href="#/login">Sign in</a>
       <a class="btn btn-primary btn-sm" href="#/register">Get started ${I.arrowRight(15)}</a>
@@ -964,13 +990,13 @@ ROUTES['/login']._after = function () {
     if (!f.password.value) { showErr(f.password, 'password'); ok = false; } else clearErr(f.password, 'password');
     if (!ok) return;
     AUTH.email = email.toLowerCase();
-    if (!CONFIG.apiBase) { setDemoUser(AUTH.email); toast(isAdmin() ? 'Signed in as administrator' : 'Signed in successfully'); setTimeout(() => navigate('/dashboard'), 600); return; }
+    if (!CONFIG.apiBase) { setDemoUser(AUTH.email); toast(isAdmin() ? 'Signed in as administrator' : 'Signed in successfully'); setTimeout(() => navigate('/dashboard', { replace: true }), 600); return; }
     apiPost('/api/auth/login', { email: AUTH.email, password: f.password.value })
-      .then(d => { setToken(d.token); toast('Signed in successfully'); navigate('/dashboard'); })
+      .then(d => { setToken(d.token); toast('Signed in successfully'); navigate('/dashboard', { replace: true }); })
       .catch(err => {
         // No reachable backend (e.g. static hosting) -> graceful demo sign-in.
         if (/HTTP 404|HTTP 5\d\d|Failed to fetch|NetworkError|Load failed|Unexpected token|JSON|<!DOCTYPE/i.test(err.message)) {
-          setDemoUser(AUTH.email); toast(isAdmin() ? 'Signed in as administrator' : 'Signed in successfully'); setTimeout(() => navigate('/dashboard'), 600); return;
+          setDemoUser(AUTH.email); toast(isAdmin() ? 'Signed in as administrator' : 'Signed in successfully'); setTimeout(() => navigate('/dashboard', { replace: true }), 600); return;
         }
         if (/not verified/i.test(err.message)) { apiPost('/api/auth/send-otp', { email: AUTH.email }).catch(() => {}); toast('Please verify your email'); navigate('/verify'); return; }
         showErr(f.password, 'password'); toast(err.message);
@@ -2390,6 +2416,11 @@ function bindGlobal() {
     if (seg._bound) return; seg._bound = true;
     seg.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => { seg.querySelectorAll('button').forEach(x => x.classList.remove('active')); btn.classList.add('active'); }));
   });
+  // Navbar ID / EN language switcher
+  $$('.lang-toggle [data-lang]').forEach(btn => {
+    if (btn._lb) return; btn._lb = true;
+    btn.addEventListener('click', () => { const l = btn.dataset.lang; if (l && l !== _lang) setLang(l); });
+  });
 }
 
 /* ============================================================
@@ -2981,12 +3012,12 @@ ROUTES['/verify']._after = function () {
   $('#otpVerify').addEventListener('click', () => {
     const code = inputs.map(i => i.value).join('');
     if (code.length < 6) { $('[data-err="otp"]').classList.add('show'); return; }
-    if (!CONFIG.apiBase) { setDemoUser(AUTH.email || DATA.user.email, AUTH.pendingName); toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard'), 600); return; }
+    if (!CONFIG.apiBase) { setDemoUser(AUTH.email || DATA.user.email, AUTH.pendingName); toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard', { replace: true }), 600); return; }
     apiPost('/api/auth/verify-otp', { email: AUTH.email || DATA.user.email, code })
-      .then(d => { if (d && d.token) setToken(d.token); toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard'), 600); })
+      .then(d => { if (d && d.token) setToken(d.token); toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard', { replace: true }), 600); })
       .catch(err => {
         if (/HTTP 404|HTTP 5\d\d|Failed to fetch|NetworkError|Load failed|Unexpected token|JSON|<!DOCTYPE/i.test(err.message)) {
-          setDemoUser(AUTH.email || DATA.user.email, AUTH.pendingName); toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard'), 600); return;
+          setDemoUser(AUTH.email || DATA.user.email, AUTH.pendingName); toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard', { replace: true }), 600); return;
         }
         const e = $('[data-err="otp"]'); e.textContent = err.message; e.classList.add('show');
       });

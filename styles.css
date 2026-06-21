@@ -185,6 +185,22 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .nav-link { font-weight: 500; color: var(--muted-foreground); padding: 8px 12px; border-radius: 8px; transition: all .15s; }
 .nav-link:hover { color: var(--foreground); background: var(--surface); }
 
+/* ---------- Language toggle (ID / EN) ---------- */
+.lang-toggle {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px; border-radius: var(--radius-pill);
+  background: var(--surface); border: 1px solid var(--border);
+}
+.lang-opt {
+  appearance: none; border: 0; cursor: pointer;
+  font-family: inherit; font-weight: 600; font-size: 12.5px; letter-spacing: .02em;
+  line-height: 1; padding: 6px 11px; border-radius: var(--radius-pill);
+  color: var(--muted-foreground); background: transparent; transition: all .15s;
+}
+.lang-opt:hover { color: var(--foreground); }
+.lang-opt.active { color: #fff; background: #0a0a0a; }
+.dark .lang-opt.active { color: #0a0a0a; background: #fff; }
+
 /* ---------- Hero ---------- */
 .hero-bg {
   background:
