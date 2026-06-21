@@ -1,0 +1,45 @@
+# ActivatePro — Render Blueprint (one-click deploy)
+# The Node server in /server also serves the static frontend (index.html, app.js, css),
+# so this single web service hosts the whole app + API.
+#
+# Deploy: Render Dashboard → New → Blueprint → connect this repo → Apply.
+# Then fill the env vars marked "sync: false" in the Render dashboard.
+services:
+  - type: web
+    name: activatepro
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Session signing secret — auto-generated, no need to set manually.
+      - key: JWT_SECRET
+        generateValue: true
+      # IMEI provider: mock (offline demo) | imeilookup | sickw | dhru
+      - key: IMEI_PROVIDER
+        value: mock
+      # Lock this to your real frontend origin in production (e.g. https://activatepro.onrender.com)
+      - key: ALLOWED_ORIGIN
+        value: "*"
+      - key: MIDTRANS_IS_PRODUCTION
+        value: "0"
+      # ---- Fill these in the Render dashboard (kept out of the repo) ----
+      - key: ADMIN_EMAILS          # comma-separated emails auto-promoted to admin
+        sync: false
+      - key: BREVO_API_KEY         # OTP email (Brevo) — leave blank to skip real emails
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: MIDTRANS_SERVER_KEY   # payments (secret, backend only)
+        sync: false
+      - key: MIDTRANS_CLIENT_KEY   # payments (public client key, served via /api/config)
+        sync: false
+      - key: SICKW_API_KEY         # real IMEI lookup (if IMEI_PROVIDER=sickw)
+        sync: false
+      - key: SICKW_SERVICE_ID
+        sync: false
