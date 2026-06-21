@@ -307,160 +307,190 @@ function marketingFooter() {
    1. LANDING PAGE
    ============================================================ */
 route('/', function () {
-  const services = DATA.services.map(s => `
-    <div class="card card-hover card-pad" style="display:flex;flex-direction:column;${s.popular?'border-color:var(--primary);box-shadow:var(--shadow-md)':''}">
-      ${s.popular?`<span class="badge badge-info" style="position:absolute;top:-11px;left:24px">Most popular</span>`:''}
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-        <span class="stat-icon" style="background:var(--primary-50);color:var(--primary)">${I.shield(20)}</span>
+  /* ---- imagery for product-style cards ---- */
+  const SERVICE_IMG = {
+    icloud:  'assets/phone-titanium.jpg',
+    carrier: 'assets/phone-desert.jpg',
+    fmi:     'assets/phone-blue.jpg',
+    mdm:     'assets/phone-black.jpg',
+  };
+  const SERVICE_TAG = { icloud:'NEW', carrier:'', fmi:'', mdm:'HOT' };
+  const SWATCHES = ['#8c8c8c','#1d1d1f','#c8b79e','#3a4a63'];
+
+  /* ---- FEATURED SERVICES (product-card style) ---- */
+  const featured = DATA.services.map(s => `
+    <div class="store-card">
+      ${SERVICE_TAG[s.id] ? `<span class="store-tag ${SERVICE_TAG[s.id]==='HOT'?'tag-hot':'tag-new'}">${SERVICE_TAG[s.id]}</span>` : ''}
+      <div class="store-card-img"><img src="${SERVICE_IMG[s.id]||'assets/phone-titanium.jpg'}" alt="${s.name}" loading="lazy"></div>
+      <div class="store-swatches">
+        ${SWATCHES.map((c,i)=>`<span class="sw ${i===0?'active':''}" style="background:${c}"></span>`).join('')}
+        <span class="store-cap">All iPhone</span>
       </div>
-      <h3 style="font-size:17px;margin-top:8px">${s.name}</h3>
-      <p class="muted" style="font-size:13px;margin:8px 0 16px;min-height:54px">${s.desc}</p>
-      <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px;flex-wrap:wrap">
-        ${s.flat ? '' : '<span class="muted" style="font-size:13px;align-self:center">Mulai</span>'}
-        <span style="font-size:32px;font-weight:800">${money(s.price)}</span>
-        <span class="muted" style="font-size:13px">/ perangkat</span>
-      </div>
-      <div class="muted" style="font-size:12.5px;display:flex;align-items:center;gap:6px;margin-bottom:18px">${I.clock(14)} Turnaround ${s.eta}</div>
-      <ul style="list-style:none;padding:0;margin:0 0 20px;display:flex;flex-direction:column;gap:10px">
-        ${s.features.map(f => `<li style="display:flex;gap:9px;font-size:13.5px"><span style="color:var(--primary)">${I.check(16)}</span>${f}</li>`).join('')}
-      </ul>
-      <a href="#/dashboard/new-order" class="btn ${s.popular?'btn-primary':'btn-outline'} btn-block" style="margin-top:auto">Start order</a>
+      <h3 class="store-card-title">${s.name}</h3>
+      <div class="store-price"><span class="muted" style="font-size:12.5px">${s.flat?'Flat':'Mulai'}</span> <b>${money(s.price)}</b></div>
+      <a href="#/dashboard/new-order" class="btn-buy">Order Now ${I.arrowRight(15)}</a>
     </div>`).join('');
 
-  const devices = DATA.devices.map(d => `<div class="card card-pad" style="text-align:center;padding:18px 12px">
-    <div style="color:var(--primary);display:flex;justify-content:center;margin-bottom:8px">${I.smartphone(24)}</div>
-    <div style="font-size:12.5px;font-weight:600">${d}</div></div>`).join('');
+  /* ---- TRUST STRIP ---- */
+  const trust = [
+    ['shield','Original Process','Metode resmi berbasis IMEI.'],
+    ['zap','Proses Cepat','Selesai dalam 1\u201324 jam.'],
+    ['lock','Secure Payment','Pembayaran aman & terenkripsi.'],
+    ['checkCircle','Garansi Resmi','No-fix-no-fee guarantee.'],
+  ].map(t=>`<div class="trust-item">
+      <span class="trust-ico">${I[t[0]]?I[t[0]](22):I.shield(22)}</span>
+      <div><div class="trust-h">${t[1]}</div><div class="muted" style="font-size:12.5px">${t[2]}</div></div>
+    </div>`).join('');
 
-  const featureItems = [
-    ['zap','Instant IMEI processing','Live GSX-connected checks return activation, FMI and blacklist status in seconds.'],
-    ['shield','Bank-grade security','SOC 2 Type II infrastructure, 256-bit encryption, and PCI-compliant payments.'],
-    ['truck','Real-time order tracking','Follow every order through a transparent status timeline with webhook events.'],
-    ['globe','80+ carrier network','Permanent factory unlocks across all major US & international carriers.'],
-    ['headset','24/7 expert support','Dedicated specialists and live chat with a median first response under 4 minutes.'],
-    ['webhook','Developer-first API','REST API, signed webhooks, and a reseller console to automate at scale.'],
-  ].map(f => `<div class="card-pad" style="border-radius:var(--radius)">
-    <span class="stat-icon" style="background:var(--primary-50);color:var(--primary)">${I[f[0]](22)}</span>
-    <h3 style="font-size:16px;margin:14px 0 8px">${f[1]}</h3>
-    <p class="muted" style="font-size:13.5px;line-height:1.65">${f[2]}</p></div>`).join('');
+  /* ---- SERVICE CATEGORIES (Shop By Category style) ---- */
+  const cats = [
+    ['iCloud Removal','Activation Lock','assets/phone-titanium.jpg','#/dashboard/new-order'],
+    ['Carrier Unlock','Factory unlock','assets/phone-desert.jpg','#/dashboard/new-order'],
+    ['Status Check','FMI & blacklist','assets/phone-blue.jpg','#/dashboard/new-order'],
+    ['MDM Bypass','Remote management','assets/phone-black.jpg','#/dashboard/new-order'],
+  ].map(c=>`<a href="${c[3]}" class="cat-card">
+      <div class="cat-text"><div class="cat-h">${c[0]}</div><div class="cat-sub">${c[1]}</div>
+        <span class="cat-arrow">${I.arrowRight(16)}</span></div>
+      <img src="${c[2]}" alt="${c[0]}" class="cat-img" loading="lazy">
+    </a>`).join('');
 
-  const testimonials = [
-    ['“ActivatePro cut our average unlock turnaround from days to hours. The webhook API plugs straight into our reseller storefront.”','Marcus Lee','COO, UnlockHub','ML'],
-    ['“The cleanest dashboard in this industry. IMEI validation is instant and the success rate is genuinely the best we have used.”','Sofia Alvarez','Founder, MobileFix Co.','SA'],
-    ['“Enterprise reliability with a consumer-grade UX. Our support tickets dropped 40% after switching.”','Daniel Park','Ops Lead, CellPro','DP'],
-  ].map(t => `<div class="card card-pad">
-    <div class="star" style="display:flex;gap:2px;margin-bottom:12px">${I.star(16).repeat(5)}</div>
-    <p style="font-size:14.5px;line-height:1.65;margin-bottom:18px">${t[0]}</p>
-    <div style="display:flex;align-items:center;gap:11px">
-      <span class="avatar">${t[3]}</span>
-      <div><div style="font-weight:600;font-size:13.5px">${t[1]}</div><div class="muted" style="font-size:12.5px">${t[2]}</div></div>
-    </div></div>`).join('');
+  /* ---- COMPARE SERVICES table ---- */
+  const compareRows = DATA.services.map(s=>`<tr>
+      <td style="font-weight:700">${s.name}</td>
+      <td>${s.eta}</td>
+      <td>All iPhone</td>
+      <td>98.6%</td>
+      <td style="font-weight:700">${money(s.price)}</td>
+    </tr>`).join('');
 
+  /* ---- TESTIMONIALS ---- */
+  const testi = [
+    ['Pengerjaan cepat, iCloud kebuka dalam hitungan jam. Mantap!','Rizky Pratama','RP'],
+    ['Admin ramah, proses jelas dan aman. Carrier unlock sukses 100%.','Dewi Anggraini','DA'],
+    ['Best service! Harga transparan, garansi beneran ada. Recommended.','Michael Jonathan','MJ'],
+  ].map(t=>`<div class="card card-pad testi-card">
+      <div class="star" style="display:flex;gap:2px;margin-bottom:10px">${I.star(16).repeat(5)}</div>
+      <p style="font-size:14px;line-height:1.6;margin-bottom:16px">${t[0]}</p>
+      <div style="display:flex;align-items:center;gap:11px"><span class="avatar">${t[2]}</span>
+        <div style="font-weight:600;font-size:13.5px">${t[1]}</div></div>
+    </div>`).join('');
+
+  /* ---- PAYMENT METHODS ---- */
+  const pays = ['VISA','Mastercard','BCA','Mandiri','BRI','QRIS','GoPay','OVO','Dana'].map(p=>`<span class="pay-chip">${p}</span>`).join('');
+
+  /* ---- FAQ ---- */
   const faqs = [
-    ['Is using ActivatePro safe and permanent?','Yes. All services use official, IMEI-based methods connected to Apple GSX and carrier databases. Carrier unlocks are factory-level and permanent — they survive iOS updates and resets.'],
-    ['How long does activation take?','Most services are processed within 1–24 hours. FMI and status checks are instant. You receive live updates at every stage via the tracking timeline and optional email/webhook notifications.'],
-    ['What if a service fails?','Failed orders are automatically refunded to your wallet or original payment method. Our 98.6% success rate is backed by a no-fix-no-fee guarantee.'],
-    ['Do you support resellers and bulk orders?','Absolutely. The reseller console offers volume pricing, a REST API, signed webhooks, and sub-account management for teams processing high volumes.'],
-    ['Which payment methods are accepted?','We accept all major credit/debit cards, Apple Pay, Google Pay, and account wallet balance. All payments are PCI-DSS compliant and processed securely.'],
-  ].map((f, i) => `<div class="acc-item" data-acc>
-    <button class="acc-trigger">${f[0]}<span class="acc-chevron">${I.chevronDown(20)}</span></button>
-    <div class="acc-body"><p style="padding:0 4px 20px;font-size:14px;line-height:1.7">${f[1]}</p></div></div>`).join('');
+    ['Apakah prosesnya aman dan permanen?','Ya. Semua layanan menggunakan metode resmi berbasis IMEI yang terhubung ke database Apple GSX dan carrier. Carrier unlock bersifat factory-level dan permanen \u2014 tetap aktif setelah update iOS maupun reset.'],
+    ['Berapa lama proses activation?','Sebagian besar layanan diproses dalam 1\u201324 jam. Cek status FMI bersifat instan. Anda menerima update di setiap tahap melalui timeline pelacakan order.'],
+    ['Bagaimana jika layanan gagal?','Order yang gagal otomatis di-refund ke wallet atau metode pembayaran asal. Tingkat keberhasilan 98.6% kami didukung jaminan no-fix-no-fee.'],
+    ['Apakah melayani reseller & order banyak?','Tentu. Reseller console menyediakan harga volume, REST API, signed webhooks, dan manajemen sub-akun untuk tim dengan volume tinggi.'],
+    ['Metode pembayaran apa saja yang diterima?','Kami menerima kartu kredit/debit, transfer bank, QRIS, GoPay, OVO, dan Dana. Semua pembayaran aman dan terenkripsi.'],
+  ].map(f=>`<div class="acc-item" data-acc>
+      <button class="acc-trigger">${f[0]}<span class="acc-chevron">${I.chevronDown(20)}</span></button>
+      <div class="acc-body"><p style="padding:0 4px 20px;font-size:14px;line-height:1.7">${f[1]}</p></div></div>`).join('');
 
   const page = el(`<div>
     ${marketingNav()}
+
     <!-- HERO -->
-    <section class="hero-bg" style="position:relative;overflow:hidden">
-      <div class="grid-mask" style="position:absolute;inset:0;opacity:.22"></div>
-      <div class="container-x" style="position:relative;padding:80px 24px 72px;display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center" >
-        <div class="fade-in">
-          <span class="eyebrow">${I.zap(14)} Trusted by 12,000+ resellers</span>
-          <h1 style="font-size:54px;line-height:1.05;margin:20px 0 18px;font-weight:800">Activate & unlock <span style="color:var(--primary)">any iPhone</span>, in minutes.</h1>
-          <p class="muted" style="font-size:17px;line-height:1.6;max-width:520px">The enterprise platform for iCloud removal, carrier unlocks, and device service management — with instant IMEI validation, real-time tracking, and a developer-first API.</p>
-          <div style="display:flex;gap:12px;margin:30px 0 24px;flex-wrap:wrap">
-            <a href="#/register" class="btn btn-primary btn-lg">Start free ${I.arrowRight(17)}</a>
-            <a href="#/#services" class="btn btn-outline btn-lg">View pricing</a>
+    <section class="store-hero">
+      <div class="container-x store-hero-grid">
+        <div class="store-hero-copy fade-in">
+          <h1 class="store-hero-title">Activate &amp; Unlock<br>Any <span>iPhone</span></h1>
+          <p class="store-hero-sub">100% Metode Original. Proses Cepat. Garansi Resmi. Harga Terbaik.</p>
+          <div class="store-hero-cta">
+            <a href="#/dashboard/new-order" class="btn-store-dark">Start Order</a>
+            <a href="#/#services" class="btn-store-ghost">View Services</a>
           </div>
-          <div style="display:flex;gap:26px;flex-wrap:wrap">
-            ${[['98.6%','Success rate'],['1.2M+','Devices activated'],['<4 min','Avg. support reply']].map(s=>`<div><div style="font-size:22px;font-weight:800">${s[0]}</div><div class="muted" style="font-size:12.5px">${s[1]}</div></div>`).join('')}
+          <div class="store-hero-badges">
+            ${[['shield','100% Original','IMEI-based methods'],['checkCircle','Garansi Resmi','No-fix-no-fee'],['zap','Proses Cepat','1\u201324 jam selesai']].map(b=>`
+              <div class="hb"><span class="hb-ico">${I[b[0]]?I[b[0]](18):I.shield(18)}</span><div><div class="hb-h">${b[0]==='shield'?'100% Original':b[0]==='checkCircle'?'Garansi Resmi':'Proses Cepat'}</div><div class="hb-s">${b[2]}</div></div></div>`).join('')}
           </div>
         </div>
-        <div style="display:flex;justify-content:center" class="fade-in">
-          <div class="phone">
-            <div class="phone-notch"></div>
-            <div class="phone-screen" style="padding:34px 18px;color:#fff;display:flex;flex-direction:column">
-              <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;opacity:.85;margin-bottom:24px"><span>9:41</span><span>${I.activity(14)}</span></div>
-              <div style="text-align:center;margin-top:10px">${I.checkCircle(54)}<div style="font-weight:700;font-size:17px;margin-top:14px">Activation complete</div><div style="font-size:12px;opacity:.85;margin-top:4px">iPhone 15 Pro · iCloud removed</div></div>
-              <div style="margin-top:auto;background:rgba(255,255,255,.14);border-radius:14px;padding:14px;backdrop-filter:blur(8px)">
-                <div style="font-size:11px;opacity:.8">Order AP-10428</div>
-                <div style="font-size:13px;font-weight:600;margin-top:3px">Ready to use ✓</div>
-              </div>
-            </div>
-          </div>
+        <div class="store-hero-img fade-in">
+          <img src="assets/hero-iphones.jpg" alt="iPhone activation" loading="eager">
         </div>
       </div>
+      <div class="store-dots"><span class="dot active"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
     </section>
 
-    <!-- LOGOS -->
-    <div class="container-x" style="padding:8px 24px 8px"><div class="muted" style="text-align:center;font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:20px">Powering activation for leading device businesses</div>
-      <div style="display:flex;justify-content:center;gap:48px;flex-wrap:wrap;opacity:.55;font-weight:800;font-size:19px;letter-spacing:-.02em">
-        <span>UnlockHub</span><span>MobileFix</span><span>CellPro</span><span>iRepair</span><span>DeviceLab</span><span>GadgetGo</span>
-      </div>
-    </div>
-
-    <!-- SERVICES / PRICING -->
+    <!-- FEATURED SERVICES -->
     <section class="section" id="services"><div class="container-x">
-      <div style="text-align:center;max-width:640px;margin:0 auto 48px">
-        <span class="eyebrow">${I.dollar(14)} Transparent pricing</span>
-        <h2 style="font-size:38px;margin:16px 0 12px">Simple, per-device pricing</h2>
-        <p class="muted" style="font-size:16px">No subscriptions, no hidden fees. Volume discounts available for resellers.</p>
+      <div class="store-head">
+        <h2 class="store-h2">Featured Services</h2>
+        <a href="#/dashboard/new-order" class="btn-pill">View All Services ${I.arrowRight(15)}</a>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;position:relative" class="pricing-grid">${services}</div>
+      <div class="store-grid">${featured}</div>
     </div></section>
 
-    <!-- DEVICES -->
-    ${deviceShowcase()}
+    <!-- TRUST STRIP -->
+    <section class="trust-strip"><div class="container-x trust-grid">${trust}</div></section>
 
-    <!-- FEATURES -->
-    <section class="section" id="features"><div class="container-x">
-      <div style="text-align:center;max-width:640px;margin:0 auto 48px">
-        <span class="eyebrow">${I.cpu(14)} Platform</span>
-        <h2 style="font-size:38px;margin:16px 0 12px">Built for scale & reliability</h2>
-        <p class="muted" style="font-size:16px">Everything you need to run a professional device service operation.</p>
+    <!-- SERVICE CATEGORIES -->
+    <section class="section"><div class="container-x">
+      <div style="text-align:center;margin-bottom:36px"><h2 class="store-h2">Our Services</h2></div>
+      <div class="cat-grid">${cats}</div>
+    </div></section>
+
+    <!-- COMPARE SERVICES -->
+    <section class="section" style="padding-top:0"><div class="container-x">
+      <div class="store-head"><h2 class="store-h2">Compare Services</h2>
+        <a href="#/#services" class="btn-pill">All Services ${I.arrowRight(15)}</a></div>
+      <div class="table-wrapper compare-wrap"><table class="compare-table">
+        <thead><tr><th>Service</th><th>Turnaround</th><th>Devices</th><th>Success</th><th>Starting From</th></tr></thead>
+        <tbody>${compareRows}</tbody></table></div>
+    </div></section>
+
+    <!-- SUPPORTED DEVICES (dark) -->
+    <section class="section"><div class="container-x">
+      <div class="dark-band">
+        <div class="dark-band-copy">
+          <h2 style="color:#fff;font-size:30px;margin:0 0 12px">Mendukung Semua Model iPhone</h2>
+          <p style="color:#9aa3ad;font-size:14.5px;line-height:1.7;margin:0 0 22px;max-width:380px">Dari iPhone 6 hingga iPhone 17 Pro Max \u2014 lintas semua versi iOS dan 80+ carrier di seluruh dunia.</p>
+          <div class="brand-chips">
+            ${['iPhone','iPad','Apple Watch','AT&amp;T','T-Mobile','Verizon'].map(b=>`<span class="brand-chip">${b}</span>`).join('')}
+          </div>
+          <a href="#/dashboard/new-order" class="btn-store-light" style="margin-top:24px">Check Compatibility ${I.arrowRight(15)}</a>
+        </div>
+        <div class="dark-band-img"><img src="assets/devices-dark.jpg" alt="Supported iPhones" loading="lazy"></div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px" class="feature-grid">${featureItems}</div>
     </div></section>
 
     <!-- TESTIMONIALS -->
     <section class="section" style="background:var(--surface)"><div class="container-x">
-      <div style="text-align:center;max-width:640px;margin:0 auto 48px">
-        <span class="eyebrow">${I.star(14)} Loved by operators</span>
-        <h2 style="font-size:38px;margin:16px 0 12px">Trusted across the industry</h2>
+      <div style="text-align:center;margin-bottom:40px"><h2 class="store-h2">What Our Customers Say</h2></div>
+      <div class="testi-grid">${testi}</div>
+    </div></section>
+
+    <!-- PAYMENTS -->
+    <section class="section" style="padding-top:0"><div class="container-x">
+      <div class="pay-band">
+        <div><div class="store-cap" style="margin-bottom:14px">Secure Payment</div><div class="pay-row">${pays}</div></div>
+        <div class="install-box"><div><div style="font-weight:700;font-size:14px">Cicilan 0%</div><div class="muted" style="font-size:12px">Hingga 24 bulan \u00b7 BCA \u00b7 Mandiri \u00b7 BRI</div></div><div class="install-zero">0<span>%</span></div></div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px" class="feature-grid">${testimonials}</div>
     </div></section>
 
     <!-- FAQ -->
-    <section class="section" id="faq"><div class="container-x" style="max-width:780px">
-      <div style="text-align:center;margin:0 auto 40px">
-        <span class="eyebrow">${I.book(14)} FAQ</span>
-        <h2 style="font-size:38px;margin:16px 0 12px">Frequently asked questions</h2>
-      </div>
+    <section class="section" id="faq" style="padding-top:0"><div class="container-x" style="max-width:820px">
+      <div style="text-align:center;margin:0 auto 36px"><h2 class="store-h2">Frequently Asked Questions</h2></div>
       <div class="card" style="padding:8px 24px">${faqs}</div>
     </div></section>
 
-    <!-- CTA -->
-    <section class="section"><div class="container-x">
-      <div style="border-radius:var(--radius-lg);background:linear-gradient(135deg,#266FA2,#184a6d);color:#fff;padding:60px 48px;text-align:center;position:relative;overflow:hidden;box-shadow:var(--shadow-lg)">
-        <div class="grid-mask" style="position:absolute;inset:0;opacity:.15"></div>
-        <div style="position:relative">
-          <h2 style="font-size:38px;color:#fff;margin-bottom:14px">Ready to activate your first device?</h2>
-          <p style="font-size:17px;opacity:.92;max-width:560px;margin:0 auto 28px">Join thousands of resellers and repair shops. No setup fees — pay only per device.</p>
-          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-            <a href="#/register" class="btn btn-lg" style="background:#fff;color:var(--primary)">Create free account</a>
-            <a href="#/support" class="btn btn-lg" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)">Talk to sales</a>
-          </div>
+    <!-- CTA dark -->
+    <section style="padding:0 0 64px"><div class="container-x">
+      <div class="cta-band">
+        <img src="assets/devices-dark.jpg" class="cta-img" alt="">
+        <div class="cta-copy">
+          <h2 style="color:#fff;font-size:32px;margin:0 0 10px">Activate Your Device Today</h2>
+          <p style="color:#c7ccd3;font-size:15px;max-width:440px;margin:0">Aktivasi & unlock iPhone Anda dengan proses tercepat dan garansi resmi.</p>
+        </div>
+        <div class="cta-actions">
+          <a href="#/dashboard/new-order" class="btn-store-light">Start Order</a>
+          <a href="#/support" class="btn-store-outline">Contact Support</a>
         </div>
       </div>
     </div></section>
+
     ${marketingFooter()}
   </div>`);
   return page;
