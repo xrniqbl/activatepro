@@ -341,6 +341,22 @@ const I18N_PAIRS = [
   ['Payment confirmed', 'Pembayaran dikonfirmasi'], ['Live updates', 'Pembaruan langsung'],
   ['Avg. order value', 'Rata-rata nilai pesanan'], ['Margin', 'Margin'], ['Active services', 'Layanan aktif'],
   ['Deliveries (24h)', 'Pengiriman (24j)'], ['Avg. latency', 'Latensi rata-rata'], ['Resellers', 'Reseller'],
+  // Testimonials
+  ['Fast turnaround \u2014 iCloud unlocked within hours. Awesome!', 'Pengerjaan cepat, iCloud kebuka dalam hitungan jam. Mantap!'],
+  ['Friendly support, clear and secure process. Carrier unlock 100% successful.', 'Admin ramah, proses jelas dan aman. Carrier unlock sukses 100%.'],
+  ['Best service! Transparent pricing, real warranty. Recommended.', 'Best service! Harga transparan, garansi beneran ada. Recommended.'],
+  // FAQ \u2014 questions
+  ['Is the process safe and permanent?', 'Apakah prosesnya aman dan permanen?'],
+  ['How long does activation take?', 'Berapa lama proses activation?'],
+  ['What if a service fails?', 'Bagaimana jika layanan gagal?'],
+  ['Do you serve resellers & bulk orders?', 'Apakah melayani reseller & order banyak?'],
+  ['Which payment methods are accepted?', 'Metode pembayaran apa saja yang diterima?'],
+  // FAQ \u2014 answers
+  ['Yes. All services use official IMEI-based methods connected to the Apple GSX and carrier databases. Carrier unlock is factory-level and permanent \u2014 it stays active after iOS updates and resets.', 'Ya. Semua layanan menggunakan metode resmi berbasis IMEI yang terhubung ke database Apple GSX dan carrier. Carrier unlock bersifat factory-level dan permanen \u2014 tetap aktif setelah update iOS maupun reset.'],
+  ['Most services are processed within 1\u201324 hours. FMI status checks are instant. You receive updates at every stage through the order tracking timeline.', 'Sebagian besar layanan diproses dalam 1\u201324 jam. Cek status FMI bersifat instan. Anda menerima update di setiap tahap melalui timeline pelacakan order.'],
+  ['Failed orders are automatically refunded to your wallet or original payment method. Our 98.6% success rate is backed by a no-fix-no-fee guarantee.', 'Order yang gagal otomatis di-refund ke wallet atau metode pembayaran asal. Tingkat keberhasilan 98.6% kami didukung jaminan no-fix-no-fee.'],
+  ['Absolutely. The reseller console offers volume pricing, a REST API, signed webhooks, and sub-account management for high-volume teams.', 'Tentu. Reseller console menyediakan harga volume, REST API, signed webhooks, dan manajemen sub-akun untuk tim dengan volume tinggi.'],
+  ['We accept credit/debit cards, bank transfers, QRIS, GoPay, OVO, and Dana. All payments are secure and encrypted.', 'Kami menerima kartu kredit/debit, transfer bank, QRIS, GoPay, OVO, dan Dana. Semua pembayaran aman dan terenkripsi.'],
 ];
 
 let _i18nEN = null, _i18nID = null;
