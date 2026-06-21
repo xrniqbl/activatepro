@@ -286,8 +286,8 @@ function marketingFooter() {
           ${brandLogo(true)}
           <p style="color:#9aa3ad;font-size:13.5px;margin-top:16px;line-height:1.7">Enterprise-grade iPhone activation and device service management. Trusted by 12,000+ resellers worldwide.</p>
           <div style="display:flex;gap:8px;margin-top:18px">
-            <span class="badge" style="background:#16221c;color:#34d399">${I.shield(13)} SOC 2 Type II</span>
-            <span class="badge" style="background:#1a2230;color:#7cc0ec">256-bit SSL</span>
+            <span class="badge" style="background:#1c1c1f;color:#d4d4d8">${I.shield(13)} SOC 2 Type II</span>
+            <span class="badge" style="background:#1c1c1f;color:#d4d4d8">256-bit SSL</span>
           </div>
         </div>
         ${col('Product', [['Pricing','#/#services'],['Supported devices','#/#devices'],['New order','#/dashboard/new-order'],['Order tracking','#/dashboard/tracking']])}
@@ -297,7 +297,7 @@ function marketingFooter() {
       <div class="divider" style="background:#222;margin:40px 0 24px"></div>
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;color:#7a828c;font-size:12.5px">
         <span>© 2026 ActivatePro Inc. All rights reserved.</span>
-        <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:999px;background:#34d399;display:inline-block"></span> All systems operational</span>
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:999px;background:#d4d4d8;display:inline-block"></span> All systems operational</span>
       </div>
     </div>
   </footer>`;
@@ -499,7 +499,7 @@ route('/', function () {
    AUTH PAGES (Login / Register) — split layout
    ============================================================ */
 function authAside(title, sub, points) {
-  return `<div style="background:linear-gradient(150deg,#2563eb,#1e3a8a);color:#fff;padding:48px;display:flex;flex-direction:column;position:relative;overflow:hidden" class="auth-aside">
+  return `<div style="background:linear-gradient(150deg,#18181b,#18181b);color:#fff;padding:48px;display:flex;flex-direction:column;position:relative;overflow:hidden" class="auth-aside">
     <div class="grid-mask" style="position:absolute;inset:0;opacity:.15"></div>
     <div style="position:relative;flex:1;display:flex;flex-direction:column">
       ${brandLogo(true)}
@@ -611,10 +611,10 @@ ROUTES['/register']._after = function () {
     const v = f.password.value; let score = 0;
     if (v.length >= 8) score++; if (/[A-Z]/.test(v) && /[a-z]/.test(v)) score++;
     if (/\d/.test(v)) score++; if (/[^A-Za-z0-9]/.test(v)) score++;
-    const colors = ['', '#dc2626', '#d97706', '#2563eb', '#16a34a'];
+    const colors = ['', '#18181b', '#71717a', '#18181b', '#3f3f46'];
     const labels = ['', 'Weak password', 'Fair password', 'Good password', 'Strong password'];
     bars.forEach((b, i) => b.style.background = i < score ? colors[score] : 'var(--muted)');
-    if (v) { hint.textContent = labels[score] || labels[1]; hint.style.color = colors[score] || '#dc2626'; }
+    if (v) { hint.textContent = labels[score] || labels[1]; hint.style.color = colors[score] || '#18181b'; }
     else { hint.textContent = 'Use 8+ characters with a mix of letters, numbers & symbols.'; hint.style.color = 'var(--muted-foreground)'; }
   });
   f.addEventListener('submit', e => {
@@ -767,7 +767,7 @@ route('/dashboard', function () {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="font-size:16px">Service mix</h3></div>
         <div style="height:200px"><canvas id="mixChart"></canvas></div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
-          ${[['iCloud Removal','#2563eb','46%'],['Carrier Unlock','#60a5fa','31%'],['Status Check','#a9cde5','14%'],['MDM Bypass','#dce9f3','9%']].map(s=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><span style="width:10px;height:10px;border-radius:3px;background:${s[1]}"></span><span style="flex:1">${s[0]}</span><span class="muted" style="font-weight:600">${s[2]}</span></div>`).join('')}
+          ${[['iCloud Removal','#18181b','46%'],['Carrier Unlock','#a1a1aa','31%'],['Status Check','#d4d4d8','14%'],['MDM Bypass','#e4e4e7','9%']].map(s=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><span style="width:10px;height:10px;border-radius:3px;background:${s[1]}"></span><span style="flex:1">${s[0]}</span><span class="muted" style="font-weight:600">${s[2]}</span></div>`).join('')}
         </div>
       </div>
     </div>
@@ -812,9 +812,9 @@ ROUTES['/dashboard']._after = function () {
     }).catch(()=>{});
   }
   if (!window.Chart) return;
-  const grid = { grid: { color: '#eef0f3' }, ticks: { color: '#64748b', font: { size: 11 } }, border: { display: false } };
-  new Chart($('#ordersChart'), { type: 'line', data: { labels: ['Dec','Jan','Feb','Mar','Apr','May','Jun'], datasets: [{ data: [22,28,31,38,42,49,58], borderColor: '#2563eb', backgroundColor: 'rgba(38,111,162,.12)', fill: true, tension: .4, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: grid, y: { ...grid, beginAtZero: true } } } });
-  new Chart($('#mixChart'), { type: 'doughnut', data: { labels: ['iCloud','Carrier','Status','MDM'], datasets: [{ data: [46,31,14,9], backgroundColor: ['#2563eb','#60a5fa','#a9cde5','#dce9f3'], borderWidth: 0, cutout: '68%' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+  const grid = { grid: { color: '#eef0f3' }, ticks: { color: '#71717a', font: { size: 11 } }, border: { display: false } };
+  new Chart($('#ordersChart'), { type: 'line', data: { labels: ['Dec','Jan','Feb','Mar','Apr','May','Jun'], datasets: [{ data: [22,28,31,38,42,49,58], borderColor: '#18181b', backgroundColor: 'rgba(63,63,70,.12)', fill: true, tension: .4, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: grid, y: { ...grid, beginAtZero: true } } } });
+  new Chart($('#mixChart'), { type: 'doughnut', data: { labels: ['iCloud','Carrier','Status','MDM'], datasets: [{ data: [46,31,14,9], backgroundColor: ['#18181b','#a1a1aa','#d4d4d8','#e4e4e7'], borderWidth: 0, cutout: '68%' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
 };
 
 /* ============================================================
@@ -1025,7 +1025,7 @@ ROUTES['/dashboard/new-order']._after = function () {
         } else {
           // HONEST offline state \u2014 never invent device status
           const note = liveErr ? `Live verification unavailable (${liveErr}).` : 'Live device verification is not configured.';
-          res.innerHTML = `<div class="card" style="box-shadow:none;border-color:#f59e0b;background:var(--surface);padding:14px"><div style="display:flex;align-items:center;gap:8px;color:var(--primary);font-weight:600;font-size:13.5px">${I.checkCircle(18)} Format & checksum valid</div><div style="font-size:12.5px;color:var(--muted-foreground);margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px"><span>Length: <b>15 \u2713</b></span><span>Luhn: <b>Passed \u2713</b></span><span>TAC: <b>${chk.tac}</b></span><span>Est. model: <b>${chk.model || 'unknown (offline)'}</b></span></div><div class="muted" style="font-size:11px;margin-top:8px">${note} FMI / blacklist / warranty need a live GSX lookup \u2014 enable the backend in server/ and set CONFIG.imeiApiBase.</div></div>`;
+          res.innerHTML = `<div class="card" style="box-shadow:none;border-color:#71717a;background:var(--surface);padding:14px"><div style="display:flex;align-items:center;gap:8px;color:var(--primary);font-weight:600;font-size:13.5px">${I.checkCircle(18)} Format & checksum valid</div><div style="font-size:12.5px;color:var(--muted-foreground);margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px"><span>Length: <b>15 \u2713</b></span><span>Luhn: <b>Passed \u2713</b></span><span>TAC: <b>${chk.tac}</b></span><span>Est. model: <b>${chk.model || 'unknown (offline)'}</b></span></div><div class="muted" style="font-size:11px;margin-top:8px">${note} FMI / blacklist / warranty need a live GSX lookup \u2014 enable the backend in server/ and set CONFIG.imeiApiBase.</div></div>`;
         }
         if (btn) btn.disabled = false;
         refreshWizChrome();
@@ -1284,7 +1284,7 @@ route('/support', function () {
   </div>`;
 
   const content = `
-    <div class="card card-pad" style="background:linear-gradient(135deg,#2563eb,#1e40af);color:#fff;margin-bottom:20px;border:none">
+    <div class="card card-pad" style="background:linear-gradient(135deg,#18181b,#18181b);color:#fff;margin-bottom:20px;border:none">
       <h2 style="color:#fff;font-size:24px">How can we help?</h2>
       <p style="opacity:.9;font-size:14px;margin:6px 0 16px">Search our knowledge base or open a ticket — our team replies in under 4 minutes.</p>
       <div class="input-group" style="max-width:520px"><span class="input-icon">${I.search(18)}</span><input class="input" placeholder="Search articles, guides, FAQs…" style="height:46px"></div>
@@ -1371,11 +1371,11 @@ ROUTES['/admin']._after = function () {
     }).catch(()=>{});
   }
   if (!window.Chart) return;
-  const grid = { grid: { color: '#eef0f3' }, ticks: { color: '#64748b', font: { size: 11 } }, border: { display: false } };
+  const grid = { grid: { color: '#eef0f3' }, ticks: { color: '#71717a', font: { size: 11 } }, border: { display: false } };
   new Chart($('#revChart'), { type: 'bar', data: { labels: ['Jan','Feb','Mar','Apr','May','Jun'], datasets: [
-    { label: 'Revenue', data: [42,51,58,67,74,84], backgroundColor: '#2563eb', borderRadius: 6, barPercentage: .6, yAxisID: 'y' },
-    { type: 'line', label: 'Orders', data: [980,1120,1290,1480,1640,1842], borderColor: '#f5a623', backgroundColor: 'transparent', borderWidth: 2.5, tension: .4, pointRadius: 0, yAxisID: 'y1' }
-  ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, scales: { x: grid, y: { ...grid, beginAtZero: true }, y1: { position: 'right', grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } }, border: { display: false } } } } });
+    { label: 'Revenue', data: [42,51,58,67,74,84], backgroundColor: '#18181b', borderRadius: 6, barPercentage: .6, yAxisID: 'y' },
+    { type: 'line', label: 'Orders', data: [980,1120,1290,1480,1640,1842], borderColor: '#71717a', backgroundColor: 'transparent', borderWidth: 2.5, tension: .4, pointRadius: 0, yAxisID: 'y1' }
+  ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, scales: { x: grid, y: { ...grid, beginAtZero: true }, y1: { position: 'right', grid: { display: false }, ticks: { color: '#71717a', font: { size: 11 } }, border: { display: false } } } } });
 };
 
 /* ---- Admin: Order management ---- */
@@ -1760,7 +1760,7 @@ route('/dashboard/settings', function () {
     </div>
     <div class="divider" style="margin:20px 0"></div>
     <h4 style="font-size:14px;font-weight:600;margin-bottom:10px">Accent color</h4>
-    <div style="display:flex;gap:10px;margin-bottom:4px">${['#2563eb','#0f172a','#7c3aed','#16a34a','#dc2626','#d97706'].map((c,i)=>`<span class="swatch ${i===0?'active':''}" data-swatch style="background:${c}"></span>`).join('')}</div>
+    <div style="display:flex;gap:10px;margin-bottom:4px">${['#18181b','#18181b','#52525b','#3f3f46','#18181b','#71717a'].map((c,i)=>`<span class="swatch ${i===0?'active':''}" data-swatch style="background:${c}"></span>`).join('')}</div>
     <div class="divider" style="margin:20px 0"></div>
     ${setRow('Compact density', 'Reduce padding for denser tables', sw(false))}
     ${setRow('Reduce motion', 'Minimize animations & transitions', sw(false))}
@@ -2035,7 +2035,7 @@ const IPHONE_MODELS = [
   { name: 'iPhone 17' }, { name: 'iPhone 17 Pro', pro: 1 }, { name: 'iPhone 17 Pro Max', pro: 1 },
 ];
 function phoneSVG(pro) {
-  const body = pro ? '#20283a' : '#dfe6ec';
+  const body = pro ? '#27272a' : '#dfe6ec';
   return `<svg class="dev-ph" width="30" height="50" viewBox="0 0 30 50" fill="none" xmlns="http://www.w3.org/2000/svg">
     <rect x="1" y="1" width="28" height="48" rx="7.5" fill="${body}"/>
     <rect x="1.5" y="1.5" width="27" height="47" rx="7" stroke="rgba(0,0,0,.14)"/>
@@ -2053,8 +2053,8 @@ function deviceShowcase() {
   const carriers = ['AT&T', 'T-Mobile', 'Verizon', 'Vodafone', 'Orange', 'O2', 'EE', 'Telcel', 'Claro', 'Telstra', 'Rogers', 'SK Telecom'];
   return `<section class="section devices-section" id="devices">
     <svg width="0" height="0" style="position:absolute"><defs>
-      <linearGradient id="scrStd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#1e40af"/></linearGradient>
-      <linearGradient id="scrPro" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2c3a57"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+      <linearGradient id="scrStd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a1a1aa"/><stop offset="1" stop-color="#18181b"/></linearGradient>
+      <linearGradient id="scrPro" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#27272a"/><stop offset="1" stop-color="#0b0b0e"/></linearGradient>
     </defs></svg>
     <div class="container-x"><div style="text-align:center;max-width:660px;margin:0 auto 40px">
       <span class="eyebrow">${I.smartphone(14)} Compatibility</span>
