@@ -1,0 +1,4 @@
+node_modules/
+.env
+data/activatepro.db
+data/activatepro.db-*
