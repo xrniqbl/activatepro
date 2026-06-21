@@ -41,7 +41,7 @@ async function apiPost(path, body) {
 // Session token (JWT) helpers
 function getToken() { try { return localStorage.getItem('ap-token') || ''; } catch (e) { return ''; } }
 function setToken(t) { try { t ? localStorage.setItem('ap-token', t) : localStorage.removeItem('ap-token'); } catch (e) {} }
-function logout() { setToken(''); AUTH.email = ''; }
+function logout() { setToken(''); AUTH.email = ''; try { localStorage.removeItem(DEMO_USER_KEY); } catch (e) {} }
 async function apiAuthed(path, opts = {}) {
   const base = (CONFIG.apiBase || '').replace(/\/$/, '');
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
@@ -50,6 +50,55 @@ async function apiAuthed(path, opts = {}) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
   return data;
+}
+
+/* ---------- Local persistent store (vouchers, order tracking, notifications) ---------- */
+const STORE_KEY = 'ap-store-v1';
+function getStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; } catch (e) { return {}; } }
+function setStore(s) { try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) {} }
+function defaultNotifications() {
+  return [
+    { id: 'n1', icon: 'package', title: 'Order AP-10428 processing', body: 'iCloud removal is now at 50%.', time: '2 min ago', read: false },
+    { id: 'n2', icon: 'checkCircle', title: 'Payment confirmed', body: 'Rp1.498.500 received for AP-10428.', time: '9 min ago', read: false },
+    { id: 'n3', icon: 'truck', title: 'Order AP-10427 completed', body: 'Carrier unlock finished successfully.', time: '1 hr ago', read: false },
+  ];
+}
+function seedStore() {
+  const s = getStore();
+  if (!s.vouchers) s.vouchers = [
+    { code: 'WELCOME10', type: 'percent', value: 10, active: true, note: 'New customer \u2014 10% off' },
+    { code: 'HEMAT50K', type: 'fixed', value: 50000, active: true, note: 'Rp50.000 off any order' },
+    { code: 'PROMO25', type: 'percent', value: 25, active: false, note: 'Seasonal promo (disabled)' },
+  ];
+  if (!s.tracking) s.tracking = {};        // orderId -> { stage: 0..4 }
+  if (!s.notifications) s.notifications = defaultNotifications();
+  setStore(s);
+  return s;
+}
+
+/* ---------- Role / session (demo + backend) ---------- */
+const ADMIN_EMAILS = ['admin@activatepro.io', 'alicia@activatepro.io', 'david@activatepro.io', 'priya@activatepro.io', 'iqbal@activatepro.io'];
+const DEMO_USER_KEY = 'ap-demo-user';
+function roleForEmail(email) { return ADMIN_EMAILS.indexOf(String(email || '').toLowerCase()) >= 0 ? 'admin' : 'user'; }
+function setDemoUser(email, name) {
+  const e = String(email || '').toLowerCase();
+  const nm = name || (e ? e.split('@')[0].replace(/\b\w/g, c => c.toUpperCase()) : 'User');
+  const u = { name: nm, email: e, initials: initialsOf(nm || e), role: roleForEmail(e) };
+  DATA.user = u;
+  try { localStorage.setItem(DEMO_USER_KEY, JSON.stringify(u)); } catch (err) {}
+  return u;
+}
+function loadDemoUser() { try { const u = JSON.parse(localStorage.getItem(DEMO_USER_KEY)); if (u && u.email) DATA.user = u; } catch (e) {} }
+function isAdmin() { return !!(DATA.user && DATA.user.role === 'admin'); }
+
+/* ---------- Order tracking stages (admin -> customer) ---------- */
+const TRACK_STAGES = ['Placed', 'Verified', 'Processing', 'Quality check', 'Completed'];
+function stageStatus(stage) { return stage >= 4 ? 'Completed' : stage === 0 ? 'Pending' : 'Processing'; }
+function orderStage(id, status) {
+  const s = getStore(); const t = (s.tracking || {})[id];
+  if (t && typeof t.stage === 'number') return t.stage;
+  const map = { Pending: 0, Processing: 2, Completed: 4, Failed: 2, Queued: 0 };
+  return map[status] != null ? map[status] : 2;
 }
 
 // Compute initials from a display name (e.g. "Iqbal Saputra" -> "IS")
@@ -219,6 +268,15 @@ function navigate(path) {
 }
 function render() {
   const path = currentPath();
+  // Admin area is restricted to administrator accounts only.
+  if (path.indexOf('/admin') === 0 && !isAdmin()) {
+    const app = $('#app');
+    app.innerHTML = '';
+    app.appendChild(adminDenied());
+    window.scrollTo(0, 0);
+    bindShell(); bindGlobal();
+    return;
+  }
   const fn = ROUTES[path] || ROUTES['/'];
   const app = $('#app');
   app.innerHTML = '';
@@ -246,9 +304,60 @@ window.addEventListener('hashchange', function () {
   const p = ((location.hash || '#/').slice(1).split('#')[0]) || '/';
   if (p !== _route) { _route = p; render(); }
 });
-window.addEventListener('DOMContentLoaded', () => { render(); loadMe(); });
+window.addEventListener('DOMContentLoaded', () => { seedStore(); loadDemoUser(); render(); loadMe(); });
 
 function el(html) { const t = document.createElement('div'); t.innerHTML = html.trim(); return t.firstElementChild; }
+
+/* ---------- Modal system ---------- */
+function closeModal() {
+  const m = document.getElementById('app-modal');
+  if (m) { m.classList.remove('open'); setTimeout(() => m.remove(), 200); }
+}
+function openModal(title, bodyHTML) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.id = 'app-modal';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head"><h3 style="font-size:17px;margin:0">${title}</h3><button class="btn btn-ghost btn-icon btn-sm" id="modalClose" aria-label="Close">${I.x(18)}</button></div>
+    <div class="modal-body">${bodyHTML}</div>
+  </div>`;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+  const c = overlay.querySelector('#modalClose'); if (c) c.addEventListener('click', closeModal);
+  document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', esc); } });
+  bindGlobal();
+  return overlay;
+}
+
+/* ---------- Minimal client-side PDF generator (no external libs) ---------- */
+function downloadInvoicePDF(lines, filename) {
+  const esc = t => String(t).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  let body = 'BT\n/F1 11 Tf\n16 TL\n50 790 Td\n';
+  (lines || []).forEach(ln => { body += '(' + esc(ln) + ') Tj\nT*\n'; });
+  body += 'ET';
+  const objs = [
+    '<</Type/Catalog/Pages 2 0 R>>',
+    '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</Font<</F1 5 0 R>>>>/Contents 4 0 R>>',
+    '<</Length ' + body.length + '>>\nstream\n' + body + '\nendstream',
+    '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [];
+  objs.forEach((o, i) => { offsets.push(pdf.length); pdf += (i + 1) + ' 0 obj\n' + o + '\nendobj\n'; });
+  const xref = pdf.length;
+  pdf += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n';
+  offsets.forEach(off => { pdf += String(off).padStart(10, '0') + ' 00000 n \n'; });
+  pdf += 'trailer\n<</Size ' + (objs.length + 1) + '/Root 1 0 R>>\nstartxref\n' + xref + '\n%%EOF';
+  const blob = new Blob([pdf], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename || 'invoice.pdf';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
 
 /* ============================================================
    MARKETING CHROME
@@ -553,10 +662,14 @@ ROUTES['/login']._after = function () {
     if (!f.password.value) { showErr(f.password, 'password'); ok = false; } else clearErr(f.password, 'password');
     if (!ok) return;
     AUTH.email = email.toLowerCase();
-    if (!CONFIG.apiBase) { toast('Signed in successfully'); setTimeout(() => navigate('/dashboard'), 600); return; }
+    if (!CONFIG.apiBase) { setDemoUser(AUTH.email); toast(isAdmin() ? 'Signed in as administrator' : 'Signed in successfully'); setTimeout(() => navigate('/dashboard'), 600); return; }
     apiPost('/api/auth/login', { email: AUTH.email, password: f.password.value })
       .then(d => { setToken(d.token); toast('Signed in successfully'); navigate('/dashboard'); })
       .catch(err => {
+        // No reachable backend (e.g. static hosting) -> graceful demo sign-in.
+        if (/HTTP 404|HTTP 5\d\d|Failed to fetch|NetworkError|Load failed|Unexpected token|JSON|<!DOCTYPE/i.test(err.message)) {
+          setDemoUser(AUTH.email); toast(isAdmin() ? 'Signed in as administrator' : 'Signed in successfully'); setTimeout(() => navigate('/dashboard'), 600); return;
+        }
         if (/not verified/i.test(err.message)) { apiPost('/api/auth/send-otp', { email: AUTH.email }).catch(() => {}); toast('Please verify your email'); navigate('/verify'); return; }
         showErr(f.password, 'password'); toast(err.message);
       });
@@ -660,6 +773,7 @@ const ADMIN_NAV = [
   { k: '/admin/users', label: 'User management', icon: 'users' },
   { sec: 'Configuration' },
   { k: '/admin/pricing', label: 'Pricing management', icon: 'dollar' },
+  { k: '/admin/vouchers', label: 'Voucher settings', icon: 'ticket' },
   { k: '/admin/webhooks', label: 'Webhook logs', icon: 'webhook' },
   { k: '/admin/activity', label: 'Activity logs', icon: 'activity' },
   { sec: '' },
@@ -667,7 +781,7 @@ const ADMIN_NAV = [
 ];
 
 function shell(activeKey, nav, title, subtitle, content) {
-  const links = nav.map(n => {
+  const links = nav.filter(n => !(n.k === '/admin' && !isAdmin())).map(n => {
     if (n.sec !== undefined) return n.sec ? `<div class="side-section">${n.sec}</div>` : `<div style="height:14px"></div>`;
     const active = n.k === activeKey ? 'active' : '';
     return `<a class="side-link ${active}" href="#${n.k}">${I[n.icon](18)}${n.label}</a>`;
@@ -694,7 +808,10 @@ function shell(activeKey, nav, title, subtitle, content) {
         <div style="display:flex;align-items:center;gap:10px">
           <div class="input-group hidden lg:block" style="width:240px"><span class="input-icon">${I.search(16)}</span><input class="input" placeholder="Search orders, IMEI…" style="height:38px"></div>
           ${themeBtn()}
-          <button class="btn btn-ghost btn-icon" data-toast="3 new notifications" style="position:relative">${I.bell(19)}<span style="position:absolute;top:7px;right:8px;width:8px;height:8px;background:var(--danger);border-radius:999px;border:2px solid #fff"></span></button>
+          <div class="notif-wrap" style="position:relative">
+            <button class="btn btn-ghost btn-icon" id="notifBtn" style="position:relative">${I.bell(19)}<span id="notifDot" style="position:absolute;top:7px;right:8px;width:8px;height:8px;background:var(--danger);border-radius:999px;border:2px solid var(--background)"></span></button>
+            <div id="notifPanel" class="notif-panel" style="display:none"></div>
+          </div>
           <a href="#/dashboard/new-order" class="btn btn-primary btn-sm hidden sm:inline-flex">${I.plusCircle(15)} New order</a>
           <span class="avatar" style="width:36px;height:36px">${DATA.user.initials}</span>
         </div>
@@ -708,6 +825,70 @@ function bindShell() {
   const mb = $('#menuBtn'), sb = $('#sidebar'), sc = $('#scrim');
   if (mb && sb) { mb.addEventListener('click', () => { sb.classList.add('open'); sc.classList.add('open'); }); }
   if (sc) sc.addEventListener('click', () => { sb.classList.remove('open'); sc.classList.remove('open'); });
+  bindNotifications();
+}
+
+/* ---------- Notifications (real, store-backed) ---------- */
+function notifPanelHTML() {
+  const s = seedStore();
+  const list = s.notifications || [];
+  const unread = list.filter(n => !n.read).length;
+  const items = list.length ? list.map(n => `<div class="notif-item ${n.read ? '' : 'unread'}" data-nid="${n.id}">
+      <span class="notif-ic">${(I[n.icon] || I.bell)(16)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${n.title}</div>
+        <div class="muted" style="font-size:12px;line-height:1.4">${n.body}</div>
+        <div class="muted" style="font-size:11px;margin-top:3px">${n.time}</div>
+      </div>${n.read ? '' : '<span class="notif-unread-dot"></span>'}
+    </div>`).join('') : `<div class="muted" style="padding:26px;text-align:center;font-size:13px">You're all caught up \u2014 no notifications.</div>`;
+  return `<div class="notif-head"><span style="font-weight:700;font-size:14px">Notifications</span>${unread ? `<button class="btn btn-ghost btn-sm" id="notifReadAll" style="height:28px">Mark all read</button>` : `<span class="muted" style="font-size:12px">All read</span>`}</div>
+    <div class="notif-list">${items}</div>`;
+}
+function refreshNotifDot() {
+  const s = getStore();
+  const unread = (s.notifications || []).filter(n => !n.read).length;
+  const dot = $('#notifDot'); if (dot) dot.style.display = unread ? 'block' : 'none';
+}
+function bindNotifications() {
+  const btn = $('#notifBtn'), panel = $('#notifPanel');
+  if (!btn || !panel || btn._bound) return;
+  btn._bound = true;
+  refreshNotifDot();
+  const close = () => { panel.style.display = 'none'; };
+  const open = () => {
+    panel.innerHTML = notifPanelHTML();
+    panel.style.display = 'block';
+    const ra = $('#notifReadAll');
+    if (ra) ra.addEventListener('click', e => { e.stopPropagation(); const s = getStore(); (s.notifications || []).forEach(n => n.read = true); setStore(s); panel.innerHTML = notifPanelHTML(); refreshNotifDot(); });
+    $$('.notif-item', panel).forEach(it => it.addEventListener('click', e => {
+      e.stopPropagation();
+      const s = getStore(); const n = (s.notifications || []).find(x => x.id === it.dataset.nid);
+      if (n) { n.read = true; setStore(s); }
+      it.classList.remove('unread'); const d = it.querySelector('.notif-unread-dot'); if (d) d.remove();
+      refreshNotifDot();
+    }));
+  };
+  btn.addEventListener('click', e => { e.stopPropagation(); panel.style.display === 'none' ? open() : close(); });
+  document.addEventListener('click', e => { if (panel.style.display !== 'none' && !panel.contains(e.target) && !btn.contains(e.target)) close(); });
+}
+function pushNotification(icon, title, body) {
+  const s = getStore();
+  s.notifications = s.notifications || [];
+  s.notifications.unshift({ id: 'n' + Date.now(), icon: icon, title: title, body: body, time: 'just now', read: false });
+  s.notifications = s.notifications.slice(0, 30);
+  setStore(s);
+  refreshNotifDot();
+}
+
+/* ---------- Admin access guard view ---------- */
+function adminDenied() {
+  const content = `<div class="card card-pad" style="max-width:520px;margin:40px auto;text-align:center">
+    <span class="stat-icon" style="margin:0 auto 14px;width:58px;height:58px;background:var(--primary-50);color:var(--primary)">${I.lock(26)}</span>
+    <h2 style="font-size:22px;margin-bottom:8px">Admin access only</h2>
+    <p class="muted" style="font-size:14px;margin-bottom:20px;line-height:1.6">The admin console is restricted to administrator accounts. Sign in with an admin account to manage orders, pricing and vouchers.</p>
+    <a href="#/dashboard" class="btn btn-primary">${I.arrowRight(16)} Back to dashboard</a>
+  </div>`;
+  return shell('/dashboard', CUSTOMER_NAV, 'Access restricted', 'Administrator area', content);
 }
 
 function statCard(icon, label, value, delta, up = true) {
@@ -1154,10 +1335,11 @@ route('/dashboard/checkout', function () {
         <div style="padding:14px 0;border-bottom:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;font-size:13.5px;padding:3px 0"><span class="muted">Subtotal</span><span>${money(base)}</span></div>
           <div style="display:flex;justify-content:space-between;font-size:13.5px;padding:3px 0"><span class="muted">PPN (11%)</span><span>${money(tax)}</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:13.5px;padding:3px 0"><span class="muted">Discount</span><span style="color:var(--success)">−Rp0</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13.5px;padding:3px 0"><span class="muted">Discount</span><span id="ckDiscount" style="color:var(--success)">−Rp0</span></div>
         </div>
-        <div style="display:flex;justify-content:space-between;font-weight:800;font-size:18px;padding:14px 0"><span>Total</span><span style="color:var(--primary)">${money(total)}</span></div>
-        <div style="display:flex;gap:8px;margin-bottom:14px"><input class="input" placeholder="Promo code" style="height:40px"><button class="btn btn-outline btn-sm" data-toast="Promo applied">Apply</button></div>
+        <div style="display:flex;justify-content:space-between;font-weight:800;font-size:18px;padding:14px 0"><span>Total</span><span id="ckTotal" style="color:var(--primary)">${money(total)}</span></div>
+        <div style="display:flex;gap:8px;margin-bottom:6px"><input class="input cell-mono" id="promoInput" placeholder="Promo code" style="height:40px;text-transform:uppercase"><button class="btn btn-outline btn-sm" id="applyPromo">Apply</button></div>
+        <div id="promoMsg" style="font-size:12px;margin-bottom:12px;min-height:16px"></div>
         <button class="btn btn-primary btn-block btn-lg" id="payBtn">${I.lock(16)} Pay ${money(total)}</button>
         <a href="#/dashboard/new-order" class="btn btn-ghost btn-block btn-sm" style="margin-top:8px">Back to order</a>
       </div>
@@ -1168,9 +1350,9 @@ route('/dashboard/checkout', function () {
           <div style="display:flex;justify-content:space-between"><span>Date</span><span>Jun 20, 2026</span></div>
           <div style="display:flex;justify-content:space-between"><span>Billed to</span><span>${DATA.user.email}</span></div>
           <div class="divider" style="margin:10px 0"></div>
-          <div style="display:flex;justify-content:space-between;color:var(--foreground);font-weight:600"><span>Amount due</span><span>${money(total)}</span></div>
+          <div style="display:flex;justify-content:space-between;color:var(--foreground);font-weight:600"><span>Amount due</span><span id="ckInvAmt">${money(total)}</span></div>
         </div>
-        <button class="btn btn-outline btn-block btn-sm" style="margin-top:12px" data-toast="Invoice downloaded">${I.download(15)} Download PDF</button>
+        <button class="btn btn-outline btn-block btn-sm" id="dlInvoice" style="margin-top:12px">${I.download(15)} Download PDF</button>
       </div>
     </div>
   </div>`;
@@ -1179,6 +1361,70 @@ route('/dashboard/checkout', function () {
 ROUTES['/dashboard/checkout']._after = function () {
   bindShell();
   $$('[data-pay]').forEach(t => t.addEventListener('click', () => { $$('[data-pay]').forEach(x => x.classList.remove('selected')); t.classList.add('selected'); }));
+
+  // --- Pricing + voucher (vouchers are managed in the admin console) ---
+  const svc0 = DATA.services.find(s => s.id === WIZ.service) || DATA.services[0];
+  const base = priceFor(WIZ.service, WIZ.device) || svc0.price || 0;
+  const tax = Math.round(base * 0.11);
+  let applied = null; // { code, type, value, discount }
+  function discountFor(v) {
+    if (!v) return 0;
+    return v.type === 'percent' ? Math.round((base + tax) * (v.value / 100)) : Math.min(v.value, base + tax);
+  }
+  function refreshTotals() {
+    const disc = applied ? applied.discount : 0;
+    const total = Math.max(0, base + tax - disc);
+    const dEl = $('#ckDiscount'); if (dEl) dEl.textContent = '\u2212' + money(disc);
+    const tEl = $('#ckTotal'); if (tEl) tEl.textContent = money(total);
+    const iEl = $('#ckInvAmt'); if (iEl) iEl.textContent = money(total);
+    const pb = $('#payBtn'); if (pb) pb.innerHTML = I.lock(16) + ' Pay ' + money(total);
+    return total;
+  }
+  const apply = $('#applyPromo'), promo = $('#promoInput'), msg = $('#promoMsg');
+  if (apply) apply.addEventListener('click', () => {
+    const code = (promo.value || '').trim().toUpperCase();
+    if (!code) { msg.textContent = ''; return; }
+    const s = seedStore();
+    const v = (s.vouchers || []).find(x => x.code === code);
+    if (!v) { applied = null; msg.style.color = 'var(--danger)'; msg.textContent = 'Invalid voucher code.'; refreshTotals(); return; }
+    if (!v.active) { applied = null; msg.style.color = 'var(--danger)'; msg.textContent = 'This voucher is no longer active.'; refreshTotals(); return; }
+    applied = { code: v.code, type: v.type, value: v.value, discount: discountFor(v) };
+    msg.style.color = 'var(--success)';
+    msg.textContent = 'Applied ' + v.code + ' \u2014 you save ' + money(applied.discount) + (v.type === 'percent' ? ' (' + v.value + '%)' : '') + '.';
+    refreshTotals();
+    toast('Voucher ' + v.code + ' applied');
+  });
+  if (promo) promo.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); apply && apply.click(); } });
+
+  // --- Downloadable invoice (real PDF file) ---
+  const dl = $('#dlInvoice');
+  if (dl) dl.addEventListener('click', () => {
+    const total = refreshTotals();
+    const disc = applied ? applied.discount : 0;
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const lines = [
+      'ActivatePro Inc.', 'Enterprise iPhone Activation & Device Services', '',
+      'INVOICE', 'Invoice No : INV-2049', 'Date       : ' + dateStr,
+      'Billed to  : ' + (DATA.user.email || ''), '',
+      '----------------------------------------------',
+      'Service    : ' + (svc0.name || ''),
+      'Device     : ' + (WIZ.device || 'iPhone 15 Pro'),
+      'IMEI       : ' + (WIZ.imei || '-'),
+      '----------------------------------------------',
+      'Subtotal   : ' + money(base),
+      'PPN (11%)  : ' + money(tax),
+      'Discount   : -' + money(disc) + (applied ? '  (' + applied.code + ')' : ''),
+      '----------------------------------------------',
+      'AMOUNT DUE : ' + money(total), '',
+      'Thank you for your business.',
+      'Payments are encrypted and PCI-DSS compliant.',
+    ];
+    downloadInvoicePDF(lines, 'ActivatePro-INV-2049.pdf');
+    pushNotification('file', 'Invoice downloaded', 'INV-2049 saved as PDF (' + money(total) + ').');
+    toast('Invoice downloaded');
+  });
+
   $('#payBtn').addEventListener('click', async () => {
     if (!CONFIG.apiBase || !getToken()) { toast('Payment successful — order placed!'); setTimeout(() => navigate('/dashboard/tracking'), 700); return; }
     const svc = DATA.services.find(s => s.id === WIZ.service) || {};
@@ -1196,24 +1442,34 @@ ROUTES['/dashboard/checkout']._after = function () {
    7. ORDER TRACKING
    ============================================================ */
 route('/dashboard/tracking', function () {
-  const steps = [
-    ['done', 'check', 'Order placed', 'Payment confirmed · Jun 20, 09:14', 'AP-10428'],
-    ['done', 'check', 'IMEI verified', 'GSX check passed · Jun 20, 09:15'],
-    ['current', 'refresh', 'Processing activation', 'Removing iCloud lock — in progress', 'now'],
-    ['', 'shield', 'Quality check', 'Final verification before delivery'],
-    ['', 'checkCircle', 'Completed', 'Device ready to activate'],
+  const TRACK_ID = 'AP-10428';
+  const stage = orderStage(TRACK_ID, 'Processing');
+  const stepDefs = [
+    ['check', 'Order placed', 'Payment confirmed · Jun 20, 09:14'],
+    ['check', 'IMEI verified', 'GSX check passed · Jun 20, 09:15'],
+    ['refresh', 'Processing activation', 'Removing iCloud lock'],
+    ['shield', 'Quality check', 'Final verification before delivery'],
+    ['checkCircle', 'Completed', 'Device ready to activate'],
   ];
+  const steps = stepDefs.map((d, i) => {
+    const state = i < stage ? 'done' : (i === stage ? 'current' : '');
+    const badge = i === stage ? (stage >= 4 ? 'done' : 'now') : (i === 0 ? TRACK_ID : '');
+    return [state, d[0], d[1], d[2] + (i === stage && stage < 4 ? ' — in progress' : ''), badge];
+  });
+  const pct = Math.min(100, Math.round((stage / 4) * 100));
+  const trackStatus = stageStatus(stage);
+  const etaTxt = stage >= 4 ? 'Completed' : 'ETA ~6 hrs';
   const tl = steps.map(s => `<div class="tl-item ${s[0]}"><span class="tl-dot">${I[s[1]](16)}</span>
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px"><div style="font-weight:600;font-size:14px">${s[2]}</div>${s[4] ? `<span class="badge ${s[0] === 'current' ? 'badge-info' : 'badge-neutral'}" style="font-size:11px">${s[4]}</span>` : ''}</div>
     <div class="muted" style="font-size:12.5px;margin-top:2px">${s[3]}</div></div>`).join('');
   const content = `<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:20px;max-width:1000px;margin:0 auto" class="checkout-grid">
     <div class="card card-pad">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;flex-wrap:wrap;gap:10px">
-        <div><div style="display:flex;align-items:center;gap:10px"><h3 style="font-size:18px" class="cell-mono" >AP-10428</h3>${statusBadge('Processing')}</div><div class="muted" style="font-size:13px;margin-top:4px">iPhone 15 Pro · iCloud Activation Lock Removal</div></div>
-        <button class="btn btn-outline btn-sm" data-toast="Refreshed — still processing">${I.refresh(15)} Refresh</button>
+        <div><div style="display:flex;align-items:center;gap:10px"><h3 style="font-size:18px" class="cell-mono" >AP-10428</h3>${statusBadge(trackStatus)}</div><div class="muted" style="font-size:13px;margin-top:4px">iPhone 15 Pro · iCloud Activation Lock Removal</div></div>
+        <button class="btn btn-outline btn-sm" id="trackRefresh">${I.refresh(15)} Refresh</button>
       </div>
-      <div style="margin-bottom:8px;display:flex;justify-content:space-between;font-size:12.5px"><span class="muted">Progress</span><span style="font-weight:600">50% · ETA ~6 hrs</span></div>
-      <div class="progress" style="margin-bottom:28px"><span style="width:50%"></span></div>
+      <div style="margin-bottom:8px;display:flex;justify-content:space-between;font-size:12.5px"><span class="muted">Progress</span><span style="font-weight:600">${pct}% · ${etaTxt}</span></div>
+      <div class="progress" style="margin-bottom:28px"><span style="width:${pct}%"></span></div>
       <div class="timeline">${tl}</div>
     </div>
     <div style="display:flex;flex-direction:column;gap:16px">
@@ -1237,82 +1493,171 @@ route('/dashboard/tracking', function () {
   </div>`;
   return shell('/dashboard/tracking', CUSTOMER_NAV, 'Order tracking', 'Real-time status of your order', content);
 });
-ROUTES['/dashboard/tracking']._after = bindShell;
+ROUTES['/dashboard/tracking']._after = function () {
+  bindShell();
+  const r = $('#trackRefresh');
+  if (r) r.addEventListener('click', () => { toast('Status refreshed'); navigate('/dashboard/tracking'); });
+};
 
 /* ============================================================
    8. SUPPORT CENTER (tickets · live chat · knowledge base)
    ============================================================ */
 route('/support', function () {
   const tickets = [
-    ['#4821', 'iCloud removal stuck at 50%', 'Open', 'warning', '2h ago'],
-    ['#4816', 'Carrier unlock — wrong network', 'In progress', 'info', '5h ago'],
-    ['#4790', 'Refund for failed order AP-10424', 'Resolved', 'success', '1d ago'],
-    ['#4772', 'API webhook not firing', 'Resolved', 'success', '2d ago'],
-  ].map(t => `<div class="card" style="box-shadow:none;border-color:var(--border);padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer" class="card-hover">
-    <div style="flex:1"><div style="display:flex;align-items:center;gap:8px"><span class="cell-mono" style="font-weight:600;color:var(--primary)">${t[0]}</span><span class="badge badge-${t[3]}" style="font-size:11px">${t[2]}</span></div><div style="font-size:13.5px;font-weight:500;margin-top:4px">${t[1]}</div></div>
-    <div style="text-align:right"><div class="muted" style="font-size:11.5px">${t[4]}</div>${I.chevronRight(16)}</div></div>`).join('');
+    { id: '#4821', subj: 'iCloud removal stuck at 50%', status: 'Open', tone: 'warning', time: '2h ago', order: 'AP-10428',
+      msgs: [
+        ['them', 'Hi Iqbal \ud83d\udc4b Thanks for reaching out. Can you confirm the order ID affected?'],
+        ['me', 'It is AP-10428 \u2014 the iCloud removal has been at 50% for a while.'],
+        ['them', "Thanks! I can see it's actively processing on GSX. Estimated completion is ~6 hrs \u2014 I'll flag it as priority for you."],
+      ] },
+    { id: '#4816', subj: 'Carrier unlock \u2014 wrong network', status: 'In progress', tone: 'info', time: '5h ago', order: 'AP-10427',
+      msgs: [
+        ['them', 'We received your report about the carrier mismatch. Investigating now.'],
+        ['me', 'The phone was an AT&T device but it was submitted as T-Mobile.'],
+        ['them', 'Understood \u2014 our operator is correcting the network and re-running the unlock at no extra cost.'],
+      ] },
+    { id: '#4790', subj: 'Refund for failed order AP-10424', status: 'Resolved', tone: 'success', time: '1d ago', order: 'AP-10424',
+      msgs: [
+        ['them', 'Your refund for AP-10424 has been approved.'],
+        ['me', 'Great, thank you. How long until it reflects?'],
+        ['them', 'Refunds typically post within 3\u20135 business days to your original payment method.'],
+      ] },
+    { id: '#4772', subj: 'API webhook not firing', status: 'Resolved', tone: 'success', time: '2d ago', order: '\u2014',
+      msgs: [
+        ['them', 'We found the webhook endpoint was returning 500 errors.'],
+        ['me', 'Fixed our server, can you resend the test event?'],
+        ['them', 'Done \u2014 delivery succeeded with a 200 OK. Closing this ticket.'],
+      ] },
+  ];
+  const ticketCards = tickets.map((t, i) => `<div class="card card-hover" data-ticket="${i}" style="box-shadow:none;border-color:var(--border);padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer">
+    <div style="flex:1"><div style="display:flex;align-items:center;gap:8px"><span class="cell-mono" style="font-weight:600;color:var(--primary)">${t.id}</span><span class="badge badge-${t.tone}" style="font-size:11px">${t.status}</span></div><div style="font-size:13.5px;font-weight:500;margin-top:4px">${t.subj}</div></div>
+    <div style="text-align:right"><div class="muted" style="font-size:11.5px">${t.time}</div>${I.chevronRight(16)}</div></div>`).join('');
 
   const kb = [
-    ['smartphone', 'How iCloud removal works', '8 articles'],
-    ['globe', 'Carrier unlock guide', '12 articles'],
-    ['cpu', 'Understanding IMEI checks', '6 articles'],
-    ['card', 'Billing & refunds', '9 articles'],
-    ['webhook', 'API & webhooks', '14 articles'],
-    ['shield', 'Security & privacy', '5 articles'],
-  ].map(k => `<a href="#/support" class="card card-hover card-pad" style="display:block">
-    <span class="stat-icon" style="background:var(--primary-50);color:var(--primary)">${I[k[0]](20)}</span>
-    <div style="font-weight:600;font-size:14px;margin-top:12px">${k[1]}</div><div class="muted" style="font-size:12.5px;margin-top:2px">${k[2]}</div></a>`).join('');
-
-  const chat = `<div class="card" style="display:flex;flex-direction:column;height:460px">
-    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
-      <span class="avatar" style="background:var(--primary)">${I.headset(17)}</span>
-      <div style="flex:1"><div style="font-weight:600;font-size:13.5px">ActivatePro Support</div><div class="muted" style="font-size:11.5px;display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:999px;background:var(--success)"></span> Online · replies in ~3 min</div></div>
-    </div>
-    <div id="chatLog" style="flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:12px">
-      <div style="display:flex;gap:8px"><span class="avatar" style="width:28px;height:28px;font-size:11px">${I.headset(14)}</span><div class="chat-bubble them">Hi Iqbal 👋 How can we help with your activation today?</div></div>
-      <div style="display:flex;justify-content:flex-end"><div class="chat-bubble me">My iCloud removal for AP-10428 is stuck at 50%.</div></div>
-      <div style="display:flex;gap:8px"><span class="avatar" style="width:28px;height:28px;font-size:11px">${I.headset(14)}</span><div class="chat-bubble them">Thanks! I can see it's actively processing on GSX. Estimated completion is ~6 hrs — I'll flag it as priority for you.</div></div>
-    </div>
-    <div style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px">
-      <input class="input" id="chatInput" placeholder="Type your message…"><button class="btn btn-primary btn-icon" id="chatSend">${I.send(18)}</button>
-    </div>
-  </div>`;
+    { icon: 'smartphone', title: 'How iCloud removal works', count: '8 articles',
+      articles: ['What is iCloud Activation Lock?', 'Clean vs. Lost mode explained', 'How long does removal take?', 'Checking removal status', 'Supported iPhone models', 'After removal: setting up your device', 'Why some removals fail', 'Requesting a refund'] },
+    { icon: 'globe', title: 'Carrier unlock guide', count: '12 articles',
+      articles: ['Supported carriers worldwide', 'How factory unlock works', 'Finding your original carrier', 'Permanent vs. temporary unlock', 'Unlock turnaround times', 'No-jailbreak guarantee', 'Re-locking risks explained', 'Troubleshooting a failed unlock'] },
+    { icon: 'cpu', title: 'Understanding IMEI checks', count: '6 articles',
+      articles: ['What an IMEI reveals', 'Reading a GSX report', 'Blacklist & FMI status', 'Warranty & coverage checks', 'IMEI format & Luhn checksum', 'Privacy of IMEI lookups'] },
+    { icon: 'card', title: 'Billing & refunds', count: '9 articles',
+      articles: ['Accepted payment methods', 'Reading your invoice', 'Refund policy & timelines', 'Applying voucher codes', 'Wallet balance & top-ups', 'Failed payment troubleshooting'] },
+    { icon: 'webhook', title: 'API & webhooks', count: '14 articles',
+      articles: ['Getting your API keys', 'Authentication & rate limits', 'Creating orders via API', 'Webhook event types', 'Verifying webhook signatures', 'Retries & idempotency'] },
+    { icon: 'shield', title: 'Security & privacy', count: '5 articles',
+      articles: ['How we protect your data', 'Data retention policy', 'Two-factor authentication', 'Reporting a vulnerability', 'GDPR & data requests'] },
+  ];
+  const kbCards = kb.map((k, i) => `<a href="#/support" data-kb="${i}" class="card card-hover card-pad" style="display:block">
+    <span class="stat-icon" style="background:var(--primary-50);color:var(--primary)">${I[k.icon](20)}</span>
+    <div style="font-weight:600;font-size:14px;margin-top:12px">${k.title}</div><div class="muted" style="font-size:12.5px;margin-top:2px">${k.count}</div></a>`).join('');
 
   const content = `
     <div class="card card-pad" style="background:linear-gradient(135deg,#18181b,#18181b);color:#fff;margin-bottom:20px;border:none">
       <h2 style="color:#fff;font-size:24px">How can we help?</h2>
-      <p style="opacity:.9;font-size:14px;margin:6px 0 16px">Search our knowledge base or open a ticket — our team replies in under 4 minutes.</p>
-      <div class="input-group" style="max-width:520px"><span class="input-icon">${I.search(18)}</span><input class="input" placeholder="Search articles, guides, FAQs…" style="height:46px"></div>
+      <p style="opacity:.9;font-size:14px;margin:6px 0 16px">Search our knowledge base or open a ticket \u2014 our team replies in under 4 minutes.</p>
+      <div class="input-group" style="max-width:520px"><span class="input-icon">${I.search(18)}</span><input class="input" id="kbSearch" placeholder="Search articles, guides, FAQs\u2026" style="height:46px"></div>
     </div>
-    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px" class="checkout-grid">
-      <div style="display:flex;flex-direction:column;gap:20px">
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Your tickets</h3><button class="btn btn-primary btn-sm" data-toast="New ticket form opened">${I.plusCircle(15)} New ticket</button></div>
-          <div style="padding:14px;display:flex;flex-direction:column;gap:10px">${tickets}</div>
-        </div>
-        <div>
-          <h3 style="font-size:16px;margin-bottom:14px">Knowledge base</h3>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px" class="kb-grid">${kb}</div>
-        </div>
+    <div style="display:flex;flex-direction:column;gap:24px;max-width:920px">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Your tickets</h3><button class="btn btn-primary btn-sm" id="newTicketBtn">${I.plusCircle(15)} New ticket</button></div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:10px" id="ticketList">${ticketCards}</div>
       </div>
-      <div><h3 style="font-size:16px;margin-bottom:14px">Live chat</h3>${chat}</div>
+      <div>
+        <h3 style="font-size:16px;margin-bottom:14px">Knowledge base</h3>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px" class="kb-grid" id="kbGrid">${kbCards}</div>
+      </div>
     </div>`;
-  return shell('/support', CUSTOMER_NAV, 'Support center', "We're here to help", content);
+  const node = shell('/support', CUSTOMER_NAV, 'Support center', "We're here to help", content);
+  ROUTES['/support']._tickets = tickets;
+  ROUTES['/support']._kb = kb;
+  return node;
 });
 ROUTES['/support']._after = function () {
   bindShell();
-  const send = () => {
-    const inp = $('#chatInput'); const v = inp.value.trim(); if (!v) return;
-    const log = $('#chatLog');
-    log.insertAdjacentHTML('beforeend', `<div style="display:flex;justify-content:flex-end"><div class="chat-bubble me">${v.replace(/</g,'&lt;')}</div></div>`);
-    inp.value = ''; log.scrollTop = log.scrollHeight;
-    setTimeout(() => {
-      log.insertAdjacentHTML('beforeend', `<div style="display:flex;gap:8px"><span class="avatar" style="width:28px;height:28px;font-size:11px">${I.headset(14)}</span><div class="chat-bubble them">Got it — a specialist will follow up shortly. Is there anything else I can check for you?</div></div>`);
-      log.scrollTop = log.scrollHeight;
-    }, 800);
-  };
-  $('#chatSend').addEventListener('click', send);
-  $('#chatInput').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+  const tickets = ROUTES['/support']._tickets || [];
+  const kb = ROUTES['/support']._kb || [];
+
+  // Open a ticket conversation in a modal.
+  $$('[data-ticket]').forEach(card => card.addEventListener('click', () => {
+    const t = tickets[+card.dataset.ticket]; if (!t) return;
+    const thread = t.msgs.map(m => m[0] === 'them'
+      ? `<div style="display:flex;gap:8px"><span class="avatar" style="width:28px;height:28px;font-size:11px;background:var(--primary)">${I.headset(14)}</span><div class="chat-bubble them">${m[1]}</div></div>`
+      : `<div style="display:flex;justify-content:flex-end"><div class="chat-bubble me">${m[1]}</div></div>`).join('');
+    openModal(`Ticket ${t.id}`, `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span class="badge badge-${t.tone}">${t.status}</span><span class="muted" style="font-size:12.5px">Order ${t.order} \u00b7 ${t.time}</span></div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:14px">${t.subj}</div>
+      <div style="display:flex;flex-direction:column;gap:12px;max-height:320px;overflow-y:auto;padding:4px 2px 12px">${thread}</div>
+      <div style="display:flex;gap:8px;border-top:1px solid var(--border);padding-top:12px">
+        <input class="input" id="tkReply" placeholder="Write a reply\u2026"><button class="btn btn-primary btn-icon" id="tkSend">${I.send(18)}</button>
+      </div>`);
+    const send = () => {
+      const inp = $('#tkReply'); const v = (inp.value || '').trim(); if (!v) return;
+      const log = $('.modal .chat-bubble') ? $$('.modal [style*="overflow-y"]')[0] : null;
+      const cont = document.querySelector('.modal-thread') || $$('.modal div[style*="overflow-y:auto"]')[0];
+      const wrap = cont || inp.parentElement.previousElementSibling;
+      wrap.insertAdjacentHTML('beforeend', `<div style="display:flex;justify-content:flex-end"><div class="chat-bubble me">${v.replace(/</g, '&lt;')}</div></div>`);
+      inp.value = ''; wrap.scrollTop = wrap.scrollHeight;
+      pushNotification('headset', 'Reply sent on ' + t.id, 'Our support team will follow up shortly.');
+      setTimeout(() => {
+        wrap.insertAdjacentHTML('beforeend', `<div style="display:flex;gap:8px"><span class="avatar" style="width:28px;height:28px;font-size:11px;background:var(--primary)">${I.headset(14)}</span><div class="chat-bubble them">Got it \u2014 a specialist will follow up shortly. Is there anything else I can help with?</div></div>`);
+        wrap.scrollTop = wrap.scrollHeight;
+      }, 800);
+    };
+    const sb = $('#tkSend'); if (sb) sb.addEventListener('click', send);
+    const ri = $('#tkReply'); if (ri) ri.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+  }));
+
+  // Open a knowledge-base category in a modal.
+  $$('[data-kb]').forEach(card => card.addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    const k = kb[+card.dataset.kb]; if (!k) return;
+    const list = k.articles.map(a => `<a href="#/support" class="kb-article" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;text-decoration:none;color:var(--foreground)"><span style="font-size:13.5px;font-weight:500">${a}</span>${I.chevronRight(16)}</a>`).join('');
+    openModal(k.title, `
+      <div class="muted" style="font-size:12.5px;margin-bottom:14px">${k.count} \u00b7 Tap an article to open it</div>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:380px;overflow-y:auto">${list}</div>`);
+    $$('.kb-article').forEach(a => a.addEventListener('click', ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      openModal(a.querySelector('span').textContent, `
+        <div class="muted" style="font-size:12.5px;margin-bottom:12px">${k.title} \u00b7 Knowledge base</div>
+        <p style="font-size:14px;line-height:1.7;margin-bottom:12px">This article explains <b>${a.querySelector('span').textContent.toLowerCase()}</b> in detail. ActivatePro processes every device request through Apple GSX with full status transparency.</p>
+        <p style="font-size:14px;line-height:1.7;margin-bottom:12px">Follow the steps below to resolve most issues on your own. If you still need help, open a support ticket and our team responds in under 4 minutes.</p>
+        <ol style="font-size:13.5px;line-height:1.8;padding-left:18px;color:var(--muted-foreground)"><li>Confirm your order ID and device model.</li><li>Check the live status on the Order tracking page.</li><li>Review the eligibility and timing notes for your service.</li><li>Contact support if the status hasn't changed within the ETA.</li></ol>
+        <div style="margin-top:16px;display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-toast="Thanks for your feedback!">${I.checkCircle(15)} This helped</button><a href="#/support" class="btn btn-outline btn-sm" id="kbOpenTicket">Still need help?</a></div>`);
+      const ot = $('#kbOpenTicket'); if (ot) ot.addEventListener('click', ev2 => { ev2.preventDefault(); closeModal(); $('#newTicketBtn') && $('#newTicketBtn').click(); });
+      bindGlobal();
+    }));
+  }));
+
+  // New ticket modal.
+  const nt = $('#newTicketBtn');
+  if (nt) nt.addEventListener('click', () => {
+    openModal('Open a new ticket', `
+      <form id="ntForm" style="display:flex;flex-direction:column;gap:14px">
+        <div class="field"><label class="label">Subject</label><input class="input" name="subj" placeholder="Briefly describe the issue" required></div>
+        <div class="field"><label class="label">Related order (optional)</label><input class="input cell-mono" name="order" placeholder="AP-10428"></div>
+        <div class="field"><label class="label">Category</label><select class="input" name="cat"><option>iCloud removal</option><option>Carrier unlock</option><option>Billing & refunds</option><option>API & webhooks</option><option>Other</option></select></div>
+        <div class="field"><label class="label">Message</label><textarea class="input" name="msg" rows="4" placeholder="Tell us what's happening\u2026" style="resize:vertical"></textarea></div>
+        <button type="submit" class="btn btn-primary btn-block">${I.plusCircle(16)} Submit ticket</button>
+      </form>`);
+    const f = $('#ntForm');
+    if (f) f.addEventListener('submit', e => {
+      e.preventDefault();
+      const subj = f.subj.value.trim() || 'New support request';
+      const newId = '#' + (4822 + Math.floor(Math.random() * 50));
+      const list = $('#ticketList');
+      if (list) list.insertAdjacentHTML('afterbegin', `<div class="card" style="box-shadow:none;border-color:var(--border);padding:14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="display:flex;align-items:center;gap:8px"><span class="cell-mono" style="font-weight:600;color:var(--primary)">${newId}</span><span class="badge badge-warning" style="font-size:11px">Open</span></div><div style="font-size:13.5px;font-weight:500;margin-top:4px">${subj.replace(/</g, '&lt;')}</div></div><div style="text-align:right"><div class="muted" style="font-size:11.5px">just now</div>${I.chevronRight(16)}</div></div>`);
+      pushNotification('headset', 'Ticket ' + newId + ' created', subj);
+      toast('Ticket ' + newId + ' created');
+      closeModal();
+    });
+  });
+
+  // Knowledge-base search filter.
+  const sb = $('#kbSearch');
+  if (sb) sb.addEventListener('input', () => {
+    const q = sb.value.toLowerCase();
+    $$('#kbGrid [data-kb]').forEach(c => { c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+  });
 };
 
 /* ============================================================
@@ -1380,7 +1725,10 @@ route('/admin/orders', function () {
     <td class="cell-mono" style="color:var(--primary);font-weight:600">${o.id}</td>
     <td><div style="font-weight:600">${o.device}</div><div class="muted" style="font-size:12px">${o.service}</div></td>
     <td class="cell-mono">${o.imei}</td><td>${statusBadge(o.status)}</td><td class="muted">${o.date}</td><td style="font-weight:600">${money(o.amount)}</td>
-    <td><div style="display:flex;gap:4px"><button class="btn btn-soft btn-sm" data-toast="Order ${o.id} marked complete">Complete</button><button class="btn btn-ghost btn-icon btn-sm" data-toast="Order actions">${I.dots(16)}</button></div></td></tr>`).join('');
+    <td><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <select class="input track-sel" data-track="${o.id}" title="Update order tracking" style="height:32px;width:140px;font-size:12px;padding:0 8px">${TRACK_STAGES.map((st, si) => `<option value="${si}" ${si === orderStage(o.id, o.status) ? 'selected' : ''}>${st}</option>`).join('')}</select>
+      <button class="btn btn-soft btn-sm" data-complete-demo="${o.id}">Complete</button>
+    </div></td></tr>`).join('');
   const content = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px">
       <div class="segmented"><button class="active">All</button><button>Pending</button><button>Processing</button><button>Failed</button></div>
@@ -1391,6 +1739,20 @@ route('/admin/orders', function () {
 });
 ROUTES['/admin/orders']._after = function () {
   bindShell();
+  // Admin can update customer-facing order tracking (works in demo + backend).
+  const applyStage = (id, stage) => {
+    const s = getStore(); s.tracking = s.tracking || {}; s.tracking[id] = { stage: stage, updatedAt: Date.now() };
+    setStore(s);
+    const ord = DATA.orders.find(o => o.id === id); if (ord) ord.status = stageStatus(stage);
+    pushNotification('truck', 'Order ' + id + ' updated', 'Tracking status set to "' + TRACK_STAGES[stage] + '".');
+  };
+  $$('.track-sel').forEach(sel => sel.addEventListener('change', () => {
+    applyStage(sel.dataset.track, +sel.value);
+    toast('Order ' + sel.dataset.track + ' \u2192 ' + TRACK_STAGES[+sel.value]);
+  }));
+  $$('[data-complete-demo]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.completeDemo; applyStage(id, 4); toast('Order ' + id + ' marked complete'); navigate('/admin/orders');
+  }));
   if (!CONFIG.apiBase || !getToken()) return;
   apiAuthed('/api/admin/orders').then(d => {
     const tb = $('#adminOrdersBody');
@@ -1473,6 +1835,66 @@ route('/admin/pricing', function () {
   return shell('/admin/pricing', ADMIN_NAV, 'Pricing management', 'Konfigurasi harga layanan (IDR)', content);
 });
 ROUTES['/admin/pricing']._after = bindShell;
+
+/* ---- Admin: Voucher settings (connected to checkout) ---- */
+route('/admin/vouchers', function () {
+  const s = seedStore();
+  const vouchers = s.vouchers || [];
+  const rows = vouchers.map((v, i) => `<tr>
+    <td class="cell-mono" style="font-weight:700;color:var(--primary)">${v.code}</td>
+    <td>${v.type === 'percent' ? v.value + '%' : money(v.value)}</td>
+    <td class="muted" style="font-size:12.5px">${v.note || ''}</td>
+    <td>${v.active ? '<span class="badge badge-success badge-dot">Active</span>' : '<span class="badge badge-neutral badge-dot">Disabled</span>'}</td>
+    <td><div style="display:flex;gap:4px;justify-content:flex-end">
+      <button class="btn btn-soft btn-sm" data-vtoggle="${i}">${v.active ? 'Disable' : 'Enable'}</button>
+      <button class="btn btn-ghost btn-icon btn-sm" data-vdel="${i}" title="Delete">${I.trash(16)}</button>
+    </div></td></tr>`).join('') || `<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">No vouchers yet \u2014 create one above.</td></tr>`;
+  const content = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px" class="card-grid">
+      ${statCard('ticket','Total vouchers', String(vouchers.length))}
+      ${statCard('checkCircle','Active', String(vouchers.filter(v => v.active).length))}
+      ${statCard('dollar','Connected to', 'Checkout')}
+    </div>
+    <div class="card card-pad" style="margin-bottom:18px">
+      <h3 style="font-size:16px;margin-bottom:14px">Create voucher</h3>
+      <form id="voucherForm" style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1.4fr auto;gap:12px;align-items:end" class="voucher-form">
+        <div class="field"><label class="label">Code</label><input class="input cell-mono" name="code" placeholder="WELCOME10" required style="text-transform:uppercase"></div>
+        <div class="field"><label class="label">Type</label><select class="input" name="type"><option value="percent">Percentage</option><option value="fixed">Fixed (Rp)</option></select></div>
+        <div class="field"><label class="label">Value</label><input class="input cell-mono" name="value" type="number" min="1" placeholder="10" required></div>
+        <div class="field"><label class="label">Note</label><input class="input" name="note" placeholder="New customer discount"></div>
+        <button type="submit" class="btn btn-primary">${I.plusCircle(16)} Add</button>
+      </form>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Vouchers</h3><span class="muted" style="font-size:12.5px">These codes work on the customer checkout page</span></div>
+      <div class="table-wrapper"><table class="data"><thead><tr><th>Code</th><th>Discount</th><th>Note</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead><tbody id="voucherBody">${rows}</tbody></table></div>
+    </div>`;
+  return shell('/admin/vouchers', ADMIN_NAV, 'Voucher settings', 'Create and manage discount codes', content);
+});
+ROUTES['/admin/vouchers']._after = function () {
+  bindShell();
+  const f = $('#voucherForm');
+  if (f) f.addEventListener('submit', e => {
+    e.preventDefault();
+    const code = (f.code.value || '').trim().toUpperCase();
+    const value = parseInt(f.value.value, 10);
+    if (!code || !value || value <= 0) { toast('Enter a valid code and value', 'alert'); return; }
+    const s = getStore(); s.vouchers = s.vouchers || [];
+    if (s.vouchers.some(v => v.code === code)) { toast('That code already exists', 'alert'); return; }
+    s.vouchers.unshift({ code: code, type: f.type.value, value: value, active: true, note: (f.note.value || '').trim() });
+    setStore(s);
+    toast('Voucher ' + code + ' created');
+    navigate('/admin/vouchers');
+  });
+  $$('[data-vtoggle]').forEach(b => b.addEventListener('click', () => {
+    const s = getStore(); const v = s.vouchers[+b.dataset.vtoggle];
+    if (v) { v.active = !v.active; setStore(s); toast('Voucher ' + v.code + (v.active ? ' enabled' : ' disabled')); navigate('/admin/vouchers'); }
+  }));
+  $$('[data-vdel]').forEach(b => b.addEventListener('click', () => {
+    const s = getStore(); const v = s.vouchers[+b.dataset.vdel];
+    if (v) { s.vouchers.splice(+b.dataset.vdel, 1); setStore(s); toast('Voucher ' + v.code + ' deleted'); navigate('/admin/vouchers'); }
+  }));
+};
 
 /* ---- Admin: Webhook logs ---- */
 route('/admin/webhooks', function () {
@@ -1998,10 +2420,15 @@ ROUTES['/verify']._after = function () {
   $('#otpVerify').addEventListener('click', () => {
     const code = inputs.map(i => i.value).join('');
     if (code.length < 6) { $('[data-err="otp"]').classList.add('show'); return; }
-    if (!CONFIG.apiBase) { toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard'), 600); return; }
+    if (!CONFIG.apiBase) { setDemoUser(AUTH.email || DATA.user.email, AUTH.pendingName); toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard'), 600); return; }
     apiPost('/api/auth/verify-otp', { email: AUTH.email || DATA.user.email, code })
       .then(d => { if (d && d.token) setToken(d.token); toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard'), 600); })
-      .catch(err => { const e = $('[data-err="otp"]'); e.textContent = err.message; e.classList.add('show'); });
+      .catch(err => {
+        if (/HTTP 404|HTTP 5\d\d|Failed to fetch|NetworkError|Load failed|Unexpected token|JSON|<!DOCTYPE/i.test(err.message)) {
+          setDemoUser(AUTH.email || DATA.user.email, AUTH.pendingName); toast('Email verified — welcome!'); setTimeout(() => navigate('/dashboard'), 600); return;
+        }
+        const e = $('[data-err="otp"]'); e.textContent = err.message; e.classList.add('show');
+      });
   });
   let t = 30; const timer = $('#otpTimer'); const resend = $('#otpResend');
   resend.disabled = true; resend.style.opacity = '.5';

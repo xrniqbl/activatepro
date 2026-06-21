@@ -655,3 +655,63 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .dark .btn-store-dark { background: #fff; color: #0a0a0a; }
 .dark .btn-store-dark:hover { background: #e6e8ec; }
 .dark .btn-buy { background: var(--primary); }
+
+/* ============================================================
+   Notifications dropdown + Modal + Voucher form (added)
+   ============================================================ */
+.notif-panel {
+  position: absolute; top: calc(100% + 10px); right: 0;
+  width: 340px; max-width: calc(100vw - 32px);
+  background: var(--background); color: var(--foreground);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); z-index: 200; overflow: hidden;
+}
+.notif-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+}
+.notif-list { max-height: 380px; overflow-y: auto; }
+.notif-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 13px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; position: relative; transition: background .15s;
+}
+.notif-item:last-child { border-bottom: 0; }
+.notif-item:hover { background: var(--surface); }
+.notif-item.unread { background: var(--primary-50); }
+.notif-ic {
+  flex: none; width: 34px; height: 34px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2); color: var(--primary);
+}
+.notif-unread-dot {
+  position: absolute; top: 16px; right: 14px;
+  width: 8px; height: 8px; border-radius: 999px; background: var(--danger);
+}
+
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(16, 24, 40, .55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px 16px; overflow-y: auto;
+  opacity: 0; transition: opacity .2s ease;
+}
+.modal-overlay.open { opacity: 1; }
+.modal {
+  width: 100%; max-width: 540px; margin: auto;
+  background: var(--background); color: var(--foreground);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(12px) scale(.98); transition: transform .2s ease;
+}
+.modal-overlay.open .modal { transform: translateY(0) scale(1); }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 18px 20px; border-bottom: 1px solid var(--border);
+}
+.modal-body { padding: 20px; }
+
+@media (max-width: 640px) {
+  .voucher-form { grid-template-columns: 1fr 1fr !important; }
+  .voucher-form > button { grid-column: 1 / -1; }
+}
