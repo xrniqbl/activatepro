@@ -8,16 +8,19 @@
    (model / FMI / blacklist / warranty via Apple GSX or an IMEI-checker API).
    Leave it empty to run in HONEST offline mode: format + Luhn checksum only,
    with no fabricated device status. See the server/ folder to deploy the proxy. */
+// Auto-detect backend API base depending on hosting context
+const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const detectedBackend = isLocalhost ? 'http://localhost:8787' : (typeof window !== 'undefined' ? window.location.origin : '');
+
 const CONFIG = {
-  imeiApiBase: '', // e.g. 'https://your-backend.example.com'
-  // apiBase: backend URL for auth/OTP (Brevo) endpoints. Empty = offline demo (no real email).
-  apiBase: '',
+  // Use auto-detected backend if available, otherwise fallback to empty (offline mode)
+  imeiApiBase: detectedBackend, 
+  apiBase: detectedBackend,
   // Midtrans Snap (frontend client key) — enables real payment popup at checkout.
   midtransClientKey: '',
   midtransProduction: false,
-  // demoMode: when no real backend is set, simulate a lookup so you can preview
-  // the full "verified" UI. Results are CLEARLY labeled as synthetic — not real.
-  demoMode: false,
+  // demoMode: fallback to simulation mode only if no backend is detected
+  demoMode: !detectedBackend,
 };
 
 // In-session auth state (which email is being verified)

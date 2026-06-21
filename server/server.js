@@ -402,5 +402,16 @@ app.post('/api/payments/midtrans/notify', (req, res) => {
 
 app.get('/health', (_req, res) => res.json({ ok: true, provider: PROVIDER }));
 
+// Serve static files from the parent directory (frontend HTML, JS, CSS)
+app.use(express.static(path.join(__dirname, '..')));
+
+// Fallback non-API routes to index.html for Single Page App (SPA) client-side routing
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path === '/health') {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, '..', 'index.html'));
+});
+
 const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => console.log(`ActivatePro IMEI backend on :${PORT} (provider=${PROVIDER})`));
