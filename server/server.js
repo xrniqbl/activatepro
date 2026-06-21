@@ -56,8 +56,24 @@ function ensureAdmin(email) {
 }
 
 const app = express();
+
+// ---- Security headers (helmet) ----
+// CSP is disabled because the SPA loads from CDNs (Tailwind, Chart.js, Google Fonts)
+// and Midtrans Snap. All other protections (nosniff, frameguard, HSTS, referrer) stay on.
+const helmet = require('helmet');
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
+
+// ---- Rate limiting (anti brute-force) ----
+const rateLimit = require('express-rate-limit');
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 30,                  // max attempts per IP per window for sensitive auth routes
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many attempts — please try again later' },
+});
 
 // ---- File uploads (multer, disk storage under server/uploads) ----
 const fs = require('fs');
@@ -72,9 +88,23 @@ const storage = multer.diskStorage({
     cb(null, Date.now() + '-' + Math.round(Math.random() * 1e6) + '-' + safe);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024, files: 8 } }); // 10MB/file, max 8
-// Serve uploaded files back
-app.use('/uploads', express.static(UPLOAD_DIR));
+const ALLOWED_UPLOAD_MIME = new Set([
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'application/pdf',
+]);
+function uploadFileFilter(_req, file, cb) {
+  // Whitelist only. SVG is intentionally excluded (can carry scripts -> XSS).
+  if (ALLOWED_UPLOAD_MIME.has(file.mimetype)) return cb(null, true);
+  cb(new Error('Unsupported file type: ' + file.mimetype + ' (allowed: JPG, PNG, GIF, WEBP, HEIC, PDF)'));
+}
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024, files: 8 }, fileFilter: uploadFileFilter }); // 10MB/file, max 8
+// Serve uploaded files back. Force download (never render inline) + nosniff to defuse stored-XSS.
+app.use('/uploads', express.static(UPLOAD_DIR, {
+  setHeaders: (res) => {
+    res.setHeader('Content-Disposition', 'attachment');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+  },
+}));
 
 const PROVIDER = (process.env.IMEI_PROVIDER || 'mock').toLowerCase();
 
@@ -317,7 +347,7 @@ function otpError(res, e, code) {
 function tooSoon(email) { const p = otpStore.get(email); return p && Date.now() - p.lastSent < 30000; }
 
 // Register: create (or refresh an unverified) account, then email an OTP.
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   const email = String((req.body && req.body.email) || '').trim().toLowerCase();
   const name = String((req.body && req.body.name) || '').trim();
   const password = String((req.body && req.body.password) || '');
@@ -345,7 +375,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
 });
 
 // Verify the OTP: marks the user verified (if present) and issues a JWT session.
-app.post('/api/auth/verify-otp', (req, res) => {
+app.post('/api/auth/verify-otp', authLimiter, (req, res) => {
   const email = String((req.body && req.body.email) || '').trim().toLowerCase();
   const code = String((req.body && req.body.code) || '').trim();
   const rec = otpStore.get(email);
@@ -361,7 +391,7 @@ app.post('/api/auth/verify-otp', (req, res) => {
 });
 
 // Login with email + password (must be verified).
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authLimiter, (req, res) => {
   const email = String((req.body && req.body.email) || '').trim().toLowerCase();
   const password = String((req.body && req.body.password) || '');
   const user = dbi.getUserByEmail(email);
@@ -432,12 +462,15 @@ app.post('/api/payments/midtrans/notify', (req, res) => {
 });
 
 /* ---------- File uploads (auth required) ---------- */
-app.post('/api/uploads', authRequired, upload.array('files', 8), (req, res) => {
-  const files = (req.files || []).map(f => ({
-    name: f.originalname, stored: f.filename, size: f.size,
-    url: '/uploads/' + f.filename,
-  }));
-  return res.json({ ok: true, files });
+app.post('/api/uploads', authRequired, (req, res) => {
+  upload.array('files', 8)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'upload failed' });
+    const files = (req.files || []).map(f => ({
+      name: f.originalname, stored: f.filename, size: f.size,
+      url: '/uploads/' + f.filename,
+    }));
+    return res.json({ ok: true, files });
+  });
 });
 
 /* ---------- Profile: update name (auth required) ---------- */
@@ -485,7 +518,7 @@ function resetEmailHtml(link) {
       </td></tr>
     </table></td></tr></table></body></html>`;
 }
-app.post('/api/auth/forgot', async (req, res) => {
+app.post('/api/auth/forgot', authLimiter, async (req, res) => {
   const email = String((req.body && req.body.email) || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address' });
   const user = dbi.getUserByEmail(email);
@@ -509,7 +542,7 @@ app.post('/api/auth/forgot', async (req, res) => {
   if (process.env.OTP_DEV_RETURN === '1') out.devToken = token;
   return res.json(out);
 });
-app.post('/api/auth/reset', (req, res) => {
+app.post('/api/auth/reset', authLimiter, (req, res) => {
   const token = String((req.body && req.body.token) || '').trim();
   const password = String((req.body && req.body.password) || '');
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
