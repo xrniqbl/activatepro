@@ -501,8 +501,7 @@ table.data tbody tr:last-child td { border-bottom: none; }
   border-bottom: 1px solid var(--border);
   overflow: hidden;
   min-height: 560px;
-  display: flex;
-  align-items: center;
+  display: block;
 }
 /* full-bleed background image of the hero */
 .store-hero-bgimg {
@@ -634,7 +633,8 @@ table.data tbody tr:last-child td { border-bottom: none; }
 .pay-band { display: grid; grid-template-columns: 1fr; gap: 20px; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
 @media (min-width: 768px){ .pay-band { grid-template-columns: 1.6fr 1fr; } }
 .pay-row { display: flex; flex-wrap: wrap; gap: 10px; }
-.pay-chip { font-size: 12.5px; font-weight: 700; color: var(--foreground); background: var(--surface); border: 1px solid var(--border); padding: 8px 14px; border-radius: 8px; }
+.pay-chip { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px; background: #ffffff; border: 1px solid var(--border); border-radius: 10px; }
+.pay-logo { height: 20px; width: auto; max-width: 84px; object-fit: contain; display: block; }
 .install-box { display: flex; align-items: center; justify-content: space-between; gap: 14px; background: linear-gradient(135deg,#f4f4f5,#e4e4e7); border-radius: var(--radius-sm); padding: 16px 20px; }
 .install-zero { font-size: 38px; font-weight: 800; color: var(--primary); line-height: 1; }
 .install-zero span { font-size: 18px; vertical-align: super; }

@@ -376,7 +376,7 @@ route('/', function () {
     </div>`).join('');
 
   /* ---- PAYMENT METHODS ---- */
-  const pays = ['VISA','Mastercard','BCA','Mandiri','BRI','QRIS','GoPay','OVO','Dana'].map(p=>`<span class="pay-chip">${p}</span>`).join('');
+  const pays = [['Visa','visa'],['Mastercard','mastercard'],['BCA','bca'],['Mandiri','mandiri'],['BRI','bri'],['QRIS','qris'],['GoPay','gopay'],['OVO','ovo'],['Dana','dana']].map(p=>`<span class="pay-chip"><img class="pay-logo" src="assets/pay/${p[1]}.png" alt="${p[0]}" loading="lazy"></span>`).join('');
 
   /* ---- FAQ ---- */
   const faqs = [
@@ -1834,9 +1834,9 @@ function updateThemeIcons() {
   const dark = document.documentElement.classList.contains('dark');
   $$('[data-theme-toggle]').forEach(b => b.innerHTML = dark ? I.sun(19) : I.moon(19));
 }
-function toggleTheme() { applyTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark'); }
-function initTheme() { applyTheme(storedTheme() || 'light'); }
-function themeBtn() { return `<button class="btn btn-ghost btn-icon" data-theme-toggle aria-label="Toggle dark mode" title="Toggle theme"></button>`; }
+function toggleTheme() { applyTheme('light'); }
+function initTheme() { applyTheme('light'); }
+function themeBtn() { return ''; }
 initTheme();
 window.addEventListener('DOMContentLoaded', initTheme);
 
