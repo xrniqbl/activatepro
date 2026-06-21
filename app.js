@@ -52,6 +52,28 @@ async function apiAuthed(path, opts = {}) {
   return data;
 }
 
+// Compute initials from a display name (e.g. "Iqbal Saputra" -> "IS")
+function initialsOf(name) {
+  return String(name || '').trim().split(/\s+/).map(w => w[0] || '').slice(0, 2).join('').toUpperCase() || 'U';
+}
+// Fetch the signed-in user from the backend and refresh DATA.user + chrome.
+async function loadMe() {
+  if (!CONFIG.apiBase || !getToken()) return null;
+  try {
+    const { user } = await apiAuthed('/api/auth/me');
+    if (user) {
+      DATA.user = { name: user.name || user.email, email: user.email, initials: initialsOf(user.name || user.email), role: user.role || 'user' };
+      // Re-render so sidebar/profile reflect the real account.
+      try { render(); } catch (e) {}
+    }
+    return user;
+  } catch (e) {
+    // Token invalid/expired — clear it so the UI returns to a clean state.
+    if (/Invalid|expired|authenticated/i.test(e.message)) logout();
+    return null;
+  }
+}
+
 // Load Midtrans Snap.js on demand
 function loadSnap() {
   return new Promise((resolve, reject) => {
@@ -224,7 +246,7 @@ window.addEventListener('hashchange', function () {
   const p = ((location.hash || '#/').slice(1).split('#')[0]) || '/';
   if (p !== _route) { _route = p; render(); }
 });
-window.addEventListener('DOMContentLoaded', render);
+window.addEventListener('DOMContentLoaded', () => { render(); loadMe(); });
 
 function el(html) { const t = document.createElement('div'); t.innerHTML = html.trim(); return t.firstElementChild; }
 
@@ -698,7 +720,7 @@ route('/dashboard', function () {
     <div style="flex:1"><div style="font-weight:600;font-size:13.5px">${n[2]}</div><div class="muted" style="font-size:12px">${n[3]}</div></div></div>`).join('');
 
   const content = `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px" class="card-grid">
+    <div id="dashStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px" class="card-grid">
       ${statCard('package','Total orders','248','12.4%')}
       ${statCard('checkCircle','Completed','231','8.1%')}
       ${statCard('clock','In progress','9','3 active', false)}
@@ -726,7 +748,7 @@ route('/dashboard', function () {
           <h3 style="font-size:16px">Recent orders</h3>
           <a href="#/dashboard/orders" class="btn btn-ghost btn-sm">View all ${I.chevronRight(14)}</a>
         </div>
-        <div class="table-wrapper"><table class="data"><thead><tr><th>Order</th><th>Device</th><th>IMEI</th><th>Status</th><th>Amount</th><th></th></tr></thead><tbody>${recent}</tbody></table></div>
+        <div class="table-wrapper"><table class="data"><thead><tr><th>Order</th><th>Device</th><th>IMEI</th><th>Status</th><th>Amount</th><th></th></tr></thead><tbody id="dashRecentBody">${recent}</tbody></table></div>
       </div>
       <div class="card card-pad">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h3 style="font-size:16px">Notifications</h3><span class="badge badge-info">4 new</span></div>
@@ -738,6 +760,28 @@ route('/dashboard', function () {
 });
 ROUTES['/dashboard']._after = function () {
   bindShell();
+  if (CONFIG.apiBase && getToken()) {
+    apiAuthed('/api/orders').then(d => {
+      const orders = d.orders || [];
+      const completed = orders.filter(o => o.status === 'Completed').length;
+      const inprog = orders.filter(o => o.status === 'Processing' || o.status === 'Pending').length;
+      const spent = orders.reduce((a, o) => a + (o.amount || 0), 0);
+      const grid = $('#dashStats');
+      if (grid) grid.innerHTML =
+        statCard('package','Total orders', String(orders.length)) +
+        statCard('checkCircle','Completed', String(completed)) +
+        statCard('clock','In progress', String(inprog), '', false) +
+        statCard('dollar','Total spent', money(spent));
+      const tb = $('#dashRecentBody');
+      if (tb && orders.length) tb.innerHTML = orders.slice(0,5).map(o => `<tr>
+        <td class="cell-mono" style="color:var(--primary);font-weight:600">${o.id}</td>
+        <td><div style="font-weight:600">${o.device||'\u2014'}</div><div class="muted" style="font-size:12px">${o.service||''}</div></td>
+        <td class="cell-mono">${o.imei||'\u2014'}</td>
+        <td>${statusBadge(o.status)}</td>
+        <td style="font-weight:600">${money(o.amount||0)}</td>
+        <td><a href="#/dashboard/tracking" class="btn btn-ghost btn-sm">Track ${I.chevronRight(14)}</a></td></tr>`).join('');
+    }).catch(()=>{});
+  }
   if (!window.Chart) return;
   const grid = { grid: { color: '#eef0f3' }, ticks: { color: '#64748b', font: { size: 11 } }, border: { display: false } };
   new Chart($('#ordersChart'), { type: 'line', data: { labels: ['Dec','Jan','Feb','Mar','Apr','May','Jun'], datasets: [{ data: [22,28,31,38,42,49,58], borderColor: '#266FA2', backgroundColor: 'rgba(38,111,162,.12)', fill: true, tension: .4, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: grid, y: { ...grid, beginAtZero: true } } } });
@@ -747,7 +791,7 @@ ROUTES['/dashboard']._after = function () {
 /* ============================================================
    5. NEW ORDER — multi-step wizard
    ============================================================ */
-const WIZ = { step: 1, series: null, device: null, deviceQuery: '', service: null, imei: '', imeiValid: false, files: [] };
+const WIZ = { step: 1, series: null, device: null, deviceQuery: '', service: null, imei: '', imeiValid: false, files: [], uploaded: [] };
 const SERIES = [
   { key: '6', label: 'iPhone 6 series', variants: [{ name: 'iPhone 6' }, { name: 'iPhone 6 Plus' }, { name: 'iPhone 6s' }, { name: 'iPhone 6s Plus' }] },
   { key: 'se', label: 'iPhone SE series', variants: [{ name: 'iPhone SE (1st gen)' }, { name: 'iPhone SE (2nd gen)' }, { name: 'iPhone SE (3rd gen)' }] },
@@ -968,7 +1012,31 @@ ROUTES['/dashboard/new-order']._after = function () {
     }
     $$('[data-rmfile]').forEach(b => b.addEventListener('click', () => { WIZ.files.splice(+b.dataset.rmfile, 1); $('#fileList').innerHTML = renderFiles(); rebindWiz(); }));
   }
-  function addFiles(list) { Array.from(list).forEach(f => WIZ.files.push(f.name)); $('#fileList') && ($('#fileList').innerHTML = renderFiles()); rebindWiz(); toast(list.length + ' file(s) attached', 'upload'); }
+  function addFiles(list) {
+    const arr = Array.from(list);
+    if (!arr.length) return;
+    // Offline mode: just track names locally.
+    if (!CONFIG.apiBase || !getToken()) {
+      arr.forEach(f => WIZ.files.push(f.name));
+      $('#fileList') && ($('#fileList').innerHTML = renderFiles()); rebindWiz();
+      toast(arr.length + ' file(s) attached', 'upload');
+      return;
+    }
+    // Real upload to backend via multipart/form-data.
+    const fd = new FormData();
+    arr.forEach(f => fd.append('files', f));
+    toast('Uploading ' + arr.length + ' file(s)\u2026', 'upload');
+    const base = (CONFIG.apiBase || '').replace(/\/$/, '');
+    fetch(base + '/api/uploads', { method: 'POST', headers: { Authorization: 'Bearer ' + getToken() }, body: fd })
+      .then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status)); return d; }))
+      .then(d => {
+        WIZ.uploaded = WIZ.uploaded || [];
+        (d.files || []).forEach(uf => { WIZ.files.push(uf.name); WIZ.uploaded.push(uf); });
+        $('#fileList') && ($('#fileList').innerHTML = renderFiles()); rebindWiz();
+        toast(arr.length + ' file(s) uploaded', 'upload');
+      })
+      .catch(err => toast('Upload failed: ' + err.message, 'alert'));
+  }
   rebindWiz();
   $('#wizBack').addEventListener('click', () => { if (WIZ.step > 1) { WIZ.step--; rerender(); } });
   $('#wizNext').addEventListener('click', () => {
@@ -1235,7 +1303,7 @@ route('/admin', function () {
     <span style="width:8px;height:8px;border-radius:999px;margin-top:6px;background:var(--${a.type==='success'?'success':a.type==='warning'?'warning':a.type==='danger'?'danger':'info'})"></span>
     <div style="flex:1;font-size:13px"><b>${a.who}</b> ${a.act} <b style="color:var(--primary)">${a.obj}</b><div class="muted" style="font-size:11.5px">${a.time}</div></div></div>`).join('');
   const content = `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px" class="card-grid">
+    <div id="adminStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px" class="card-grid">
       ${statCard('dollar','Revenue (MTD)','Rp842Jt','22.6%')}
       ${statCard('package','Orders (MTD)','1,842','14.2%')}
       ${statCard('checkCircle','Success rate','98.6%','0.4%')}
@@ -1250,12 +1318,29 @@ route('/admin', function () {
     </div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Recent orders</h3><a href="#/admin/orders" class="btn btn-ghost btn-sm">Manage orders ${I.chevronRight(14)}</a></div>
-      <div class="table-wrapper"><table class="data"><thead><tr><th>Order</th><th>Device</th><th>Service</th><th>Status</th><th>Amount</th></tr></thead><tbody>${topOrders}</tbody></table></div>
+      <div class="table-wrapper"><table class="data"><thead><tr><th>Order</th><th>Device</th><th>Service</th><th>Status</th><th>Amount</th></tr></thead><tbody id="adminRecentBody">${topOrders}</tbody></table></div>
     </div>`;
   return shell('/admin', ADMIN_NAV, 'Admin dashboard', 'Operations overview', content);
 });
 ROUTES['/admin']._after = function () {
   bindShell();
+  if (CONFIG.apiBase && getToken()) {
+    apiAuthed('/api/admin/stats').then(st => {
+      const grid = $('#adminStats');
+      if (grid) grid.innerHTML =
+        statCard('dollar','Revenue (total)', money(st.revenue||0)) +
+        statCard('package','Orders (total)', String(st.orders||0)) +
+        statCard('checkCircle','Verified mix','\u2014') +
+        statCard('users','Total users', String(st.users||0));
+    }).catch(()=>{});
+    apiAuthed('/api/admin/orders').then(d => {
+      const tb = $('#adminRecentBody');
+      if (tb && d.orders) tb.innerHTML = d.orders.slice(0,5).map(o => `<tr>
+        <td class="cell-mono" style="color:var(--primary);font-weight:600">${o.id}</td>
+        <td>${o.device||'\u2014'}</td><td class="muted" style="font-size:12.5px">${o.service||''}</td>
+        <td>${statusBadge(o.status)}</td><td style="font-weight:600">${money(o.amount||0)}</td></tr>`).join('') || tb.innerHTML;
+    }).catch(()=>{});
+  }
   if (!window.Chart) return;
   const grid = { grid: { color: '#eef0f3' }, ticks: { color: '#64748b', font: { size: 11 } }, border: { display: false } };
   new Chart($('#revChart'), { type: 'bar', data: { labels: ['Jan','Feb','Mar','Apr','May','Jun'], datasets: [
@@ -1277,10 +1362,30 @@ route('/admin/orders', function () {
       <div class="segmented"><button class="active">All</button><button>Pending</button><button>Processing</button><button>Failed</button></div>
       <div style="display:flex;gap:8px"><div class="input-group hidden sm:block" style="width:220px"><span class="input-icon">${I.search(16)}</span><input class="input" placeholder="Search orders…" style="height:38px"></div><button class="btn btn-outline btn-sm">${I.download(15)} Export</button></div>
     </div>
-    <div class="card"><div class="table-wrapper"><table class="data"><thead><tr><th style="width:36px"><input type="checkbox" style="accent-color:var(--primary)"></th><th>Order</th><th>Device</th><th>IMEI</th><th>Status</th><th>Date</th><th>Amount</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    <div class="card"><div class="table-wrapper"><table class="data"><thead><tr><th style="width:36px"><input type="checkbox" style="accent-color:var(--primary)"></th><th>Order</th><th>Device</th><th>IMEI</th><th>Status</th><th>Date</th><th>Amount</th><th>Actions</th></tr></thead><tbody id="adminOrdersBody">${rows}</tbody></table></div></div>`;
   return shell('/admin/orders', ADMIN_NAV, 'Order management', 'Manage and process all orders', content);
 });
-ROUTES['/admin/orders']._after = bindShell;
+ROUTES['/admin/orders']._after = function () {
+  bindShell();
+  if (!CONFIG.apiBase || !getToken()) return;
+  apiAuthed('/api/admin/orders').then(d => {
+    const tb = $('#adminOrdersBody');
+    if (!tb || !d.orders) return;
+    tb.innerHTML = d.orders.map(o => `<tr>
+      <td><input type="checkbox" style="accent-color:var(--primary)"></td>
+      <td class="cell-mono" style="color:var(--primary);font-weight:600">${o.id}</td>
+      <td><div style="font-weight:600">${o.device||'\u2014'}</div><div class="muted" style="font-size:12px">${o.service||''}</div></td>
+      <td class="cell-mono">${o.imei||'\u2014'}</td><td>${statusBadge(o.status)}</td><td class="muted">${(o.created_at||'').slice(0,10)}</td><td style="font-weight:600">${money(o.amount||0)}</td>
+      <td><div style="display:flex;gap:4px"><button class="btn btn-soft btn-sm" data-complete="${o.id}">Complete</button><button class="btn btn-ghost btn-icon btn-sm" data-toast="Order actions">${I.dots(16)}</button></div></td></tr>`).join('') || `<tr><td colspan="8" class="muted" style="text-align:center;padding:24px">No orders yet</td></tr>`;
+    // Wire the Complete buttons to a real status update.
+    $$('[data-complete]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.complete; b.disabled = true;
+      apiAuthed('/api/admin/orders/' + id, { method: 'PATCH', body: { status: 'Completed' } })
+        .then(() => { toast('Order ' + id + ' marked complete'); ROUTES['/admin/orders']._after(); })
+        .catch(err => { toast(err.message, 'alert'); b.disabled = false; });
+    }));
+  }).catch(()=>{});
+};
 
 /* ---- Admin: User management ---- */
 route('/admin/users', function () {
@@ -1296,10 +1401,24 @@ route('/admin/users', function () {
       ${statCard('users','Total users','3,217','9.8%')}${statCard('checkCircle','Active','3,140')}${statCard('shield','Resellers','284','12%')}${statCard('alert','Suspended','7', '2', false)}
     </div>
     <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Team & users</h3><button class="btn btn-primary btn-sm" data-toast="Invite sent">${I.plusCircle(15)} Invite user</button></div>
-      <div class="table-wrapper"><table class="data"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Orders</th><th>Joined</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      <div class="table-wrapper"><table class="data"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Orders</th><th>Joined</th><th></th></tr></thead><tbody id="adminUsersBody">${rows}</tbody></table></div></div>`;
   return shell('/admin/users', ADMIN_NAV, 'User management', 'Manage team members and resellers', content);
 });
-ROUTES['/admin/users']._after = bindShell;
+ROUTES['/admin/users']._after = function () {
+  bindShell();
+  if (!CONFIG.apiBase || !getToken()) return;
+  apiAuthed('/api/admin/users').then(d => {
+    const tb = $('#adminUsersBody');
+    if (!tb || !d.users) return;
+    const roleBadge = r => ({ admin: 'info', user: 'neutral' }[r] || 'neutral');
+    tb.innerHTML = d.users.map(u => `<tr>
+      <td><div style="display:flex;align-items:center;gap:10px"><span class="avatar" style="width:34px;height:34px;font-size:12px">${initialsOf(u.name||u.email)}</span><div><div style="font-weight:600">${u.name||'\u2014'}</div><div class="muted" style="font-size:12px">${u.email}</div></div></div></td>
+      <td><span class="badge badge-${roleBadge(u.role)}">${u.role||'user'}</span></td>
+      <td>${u.verified ? '<span class="badge badge-success badge-dot">Verified</span>' : '<span class="badge badge-warning badge-dot">Unverified</span>'}</td>
+      <td style="font-weight:600">\u2014</td><td class="muted">${(u.created_at||'').slice(0,10)}</td>
+      <td><button class="btn btn-ghost btn-icon btn-sm" data-toast="Edit user">${I.dots(16)}</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">No users yet</td></tr>`;
+  }).catch(()=>{});
+};
 
 /* ---- Admin: Pricing management ---- */
 route('/admin/pricing', function () {
@@ -1462,8 +1581,8 @@ route('/dashboard/profile', function () {
           <p class="muted" style="font-size:12.5px;margin-bottom:18px">Update your personal details and contact information.</p>
           <form id="profileForm" style="display:flex;flex-direction:column;gap:15px">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="wiz-grid">
-              <div class="field"><label class="label">First name</label><input class="input" value="Iqbal"></div>
-              <div class="field"><label class="label">Last name</label><input class="input" value="Saputra"></div>
+              <div class="field"><label class="label">First name</label><input class="input" id="pfFirst" value="${(u.name||'').split(' ')[0]||''}"></div>
+              <div class="field"><label class="label">Last name</label><input class="input" id="pfLast" value="${(u.name||'').split(' ').slice(1).join(' ')||''}"></div>
             </div>
             <div class="field"><label class="label">Email address</label><div class="input-group"><span class="input-icon">${I.mail(17)}</span><input class="input" value="${u.email}"></div></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="wiz-grid">
@@ -1514,7 +1633,17 @@ route('/dashboard/profile', function () {
 ROUTES['/dashboard/profile']._after = function () {
   bindShell();
   const f = $('#profileForm');
-  if (f) f.addEventListener('submit', e => { e.preventDefault(); toast('Profile saved successfully'); });
+  if (f) f.addEventListener('submit', e => {
+    e.preventDefault();
+    const first = ($('#pfFirst') && $('#pfFirst').value.trim()) || '';
+    const last = ($('#pfLast') && $('#pfLast').value.trim()) || '';
+    const name = (first + ' ' + last).trim();
+    if (!CONFIG.apiBase || !getToken()) { toast('Profile saved successfully'); return; }
+    if (!name) { toast('Name is required', 'alert'); return; }
+    apiAuthed('/api/profile', { method: 'PATCH', body: { name } })
+      .then(d => { if (d && d.user) { DATA.user = { name: d.user.name, email: d.user.email, initials: initialsOf(d.user.name), role: d.user.role }; } toast('Profile saved successfully'); render(); })
+      .catch(err => toast(err.message, 'alert'));
+  });
 };
 
 /* ============================================================
@@ -1559,9 +1688,9 @@ route('/dashboard/settings', function () {
     <div class="card card-pad">
       <h3 style="font-size:16px;margin-bottom:14px">Change password</h3>
       <form id="pwForm" style="display:flex;flex-direction:column;gap:14px;max-width:440px">
-        <div class="field"><label class="label">Current password</label><div class="input-group"><span class="input-icon">${I.lock(17)}</span><input class="input" type="password" placeholder="••••••••"></div></div>
-        <div class="field"><label class="label">New password</label><div class="input-group"><span class="input-icon">${I.lock(17)}</span><input class="input" type="password" placeholder="••••••••"></div></div>
-        <div class="field"><label class="label">Confirm new password</label><div class="input-group"><span class="input-icon">${I.lock(17)}</span><input class="input" type="password" placeholder="••••••••"></div></div>
+        <div class="field"><label class="label">Current password</label><div class="input-group"><span class="input-icon">${I.lock(17)}</span><input class="input" id="pwCurrent" type="password" placeholder="••••••••"></div></div>
+        <div class="field"><label class="label">New password</label><div class="input-group"><span class="input-icon">${I.lock(17)}</span><input class="input" id="pwNew" type="password" placeholder="••••••••"></div></div>
+        <div class="field"><label class="label">Confirm new password</label><div class="input-group"><span class="input-icon">${I.lock(17)}</span><input class="input" id="pwConfirm" type="password" placeholder="••••••••"></div></div>
         <button type="submit" class="btn btn-primary" style="align-self:flex-start">Update password</button>
       </form>
     </div>
@@ -1644,7 +1773,18 @@ ROUTES['/dashboard/settings']._after = function () {
   cards.forEach((c, i) => { c.classList.toggle('active', modes[i] === _theme); });
   cards.forEach((c, i) => c.addEventListener('click', () => { cards.forEach(x => x.classList.remove('active')); c.classList.add('active'); applyTheme(modes[i]); toast('Theme preference saved'); }));
   $$('[data-swatch]').forEach(s => s.addEventListener('click', () => { $$('[data-swatch]').forEach(x => x.classList.remove('active')); s.classList.add('active'); document.documentElement.style.setProperty('--primary', s.style.background); toast('Accent color updated'); }));
-  const pf = $('#pwForm'); if (pf) pf.addEventListener('submit', e => { e.preventDefault(); toast('Password updated'); });
+  const pf = $('#pwForm'); if (pf) pf.addEventListener('submit', e => {
+    e.preventDefault();
+    const cur = ($('#pwCurrent') && $('#pwCurrent').value) || '';
+    const nw = ($('#pwNew') && $('#pwNew').value) || '';
+    const cf = ($('#pwConfirm') && $('#pwConfirm').value) || '';
+    if (nw.length < 8) { toast('New password must be at least 8 characters', 'alert'); return; }
+    if (nw !== cf) { toast('Passwords do not match', 'alert'); return; }
+    if (!CONFIG.apiBase || !getToken()) { toast('Password updated'); pf.reset(); return; }
+    apiAuthed('/api/auth/change-password', { method: 'POST', body: { current: cur, next: nw } })
+      .then(() => { toast('Password updated'); pf.reset(); })
+      .catch(err => toast(err.message, 'alert'));
+  });
 };
 
 /* ============================================================
@@ -1705,17 +1845,89 @@ route('/forgot', function () {
 });
 ROUTES['/forgot']._after = function () {
   const f = $('#fForm');
+  const showDone = (email) => { $('#fEmail').textContent = email; $('#forgotForm').style.display = 'none'; $('#forgotDone').style.display = 'block'; };
+  const submit = (email) => {
+    if (!CONFIG.apiBase) { showDone(email); toast('Reset link sent'); return; }
+    const btn = f.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+    apiPost('/api/auth/forgot', { email })
+      .then(d => {
+        showDone(email); toast('Reset link sent');
+        // Dev mode: backend returns the token so you can reset without email.
+        if (d && d.devToken) {
+          const url = '#/reset?token=' + d.devToken;
+          const done = $('#forgotDone');
+          const dev = document.createElement('p');
+          dev.style.cssText = 'margin-top:14px;font-size:12.5px';
+          dev.innerHTML = 'Dev mode: <a href="' + url + '" style="color:var(--primary);font-weight:600">open reset link</a>';
+          done.appendChild(dev);
+        }
+      })
+      .catch(err => toast(err.message))
+      .finally(() => { if (btn) btn.disabled = false; });
+  };
   f.addEventListener('submit', e => {
     e.preventDefault();
     const email = f.email.value.trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showErr(f.email, 'femail'); return; }
     clearErr(f.email, 'femail');
-    $('#fEmail').textContent = email;
-    $('#forgotForm').style.display = 'none';
-    $('#forgotDone').style.display = 'block';
-    toast('Reset link sent');
+    submit(email);
   });
-  $('#fResend').addEventListener('click', () => toast('Reset link re-sent'));
+  $('#fResend').addEventListener('click', () => { const email = f.email.value.trim() || $('#fEmail').textContent; if (email) submit(email); });
+};
+
+/* ============================================================
+   RESET PASSWORD (token from email link: #/reset?token=...)
+   ============================================================ */
+route('/reset', function () {
+  const page = el(`<div style="min-height:100dvh;display:grid;grid-template-columns:1fr 1fr" class="auth-shell">
+    ${authAside('Choose a new password.', 'Pick a strong password you don\'t use anywhere else. Your reset link is single-use and expires in 30 minutes.', ['Single-use, secure reset','Minimum 8 characters','Your data stays encrypted'])}
+    <div style="display:flex;align-items:center;justify-content:center;padding:40px 24px;background:var(--background)">
+      <div style="width:100%;max-width:400px" class="fade-in">
+        <div class="md:hidden" style="margin-bottom:24px">${brandLogo()}</div>
+        <div id="resetForm">
+          <h1 style="font-size:26px;margin-bottom:6px">Set a new password</h1>
+          <p class="muted" style="margin-bottom:26px;font-size:14px">Enter and confirm your new password.</p>
+          <form id="rForm" novalidate style="display:flex;flex-direction:column;gap:16px">
+            <div class="field"><label class="label">New password</label>
+              <div class="input-group"><span class="input-icon">${I.lock(17)}</span><input class="input" name="pw" type="password" placeholder="At least 8 characters"></div>
+              <span class="input-error" data-err="rpw">Password must be at least 8 characters.</span></div>
+            <div class="field"><label class="label">Confirm password</label>
+              <div class="input-group"><span class="input-icon">${I.lock(17)}</span><input class="input" name="pw2" type="password" placeholder="Re-enter password"></div>
+              <span class="input-error" data-err="rpw2">Passwords do not match.</span></div>
+            <button type="submit" class="btn btn-primary btn-block btn-lg">Update password ${I.arrowRight(16)}</button>
+          </form>
+          <a href="#/login" class="btn btn-ghost btn-block btn-sm" style="margin-top:12px">${I.arrowRight(15)} Back to sign in</a>
+        </div>
+        <div id="resetDone" style="display:none;text-align:center">
+          <span class="stat-icon" style="margin:0 auto 16px;width:56px;height:56px;background:var(--success-bg);color:var(--success)">${I.checkCircle(26)}</span>
+          <h1 style="font-size:24px;margin-bottom:8px">Password updated</h1>
+          <p class="muted" style="font-size:14px;margin-bottom:22px">You can now sign in with your new password.</p>
+          <a href="#/login" class="btn btn-primary btn-block btn-lg">Back to sign in</a>
+        </div>
+      </div>
+    </div>
+  </div>`);
+  return page;
+});
+ROUTES['/reset']._after = function () {
+  const f = $('#rForm');
+  // Extract token from the hash query (#/reset?token=...)
+  let token = '';
+  try { const h = location.hash || ''; const q = h.split('?')[1] || ''; token = new URLSearchParams(q).get('token') || ''; } catch (e) {}
+  f.addEventListener('submit', e => {
+    e.preventDefault();
+    const pw = f.pw.value, pw2 = f.pw2.value;
+    let ok = true;
+    if (pw.length < 8) { showErr(f.pw, 'rpw'); ok = false; } else clearErr(f.pw, 'rpw');
+    if (pw !== pw2) { showErr(f.pw2, 'rpw2'); ok = false; } else clearErr(f.pw2, 'rpw2');
+    if (!ok) return;
+    if (!token) { toast('Missing or invalid reset link'); return; }
+    if (!CONFIG.apiBase) { $('#resetForm').style.display = 'none'; $('#resetDone').style.display = 'block'; return; }
+    const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
+    apiPost('/api/auth/reset', { token, password: pw })
+      .then(() => { $('#resetForm').style.display = 'none'; $('#resetDone').style.display = 'block'; toast('Password updated'); })
+      .catch(err => { toast(err.message); btn.disabled = false; });
+  });
 };
 
 /* ============================================================

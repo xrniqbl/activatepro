@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   name          TEXT,
   password_hash TEXT NOT NULL,
   verified      INTEGER NOT NULL DEFAULT 0,
+  role          TEXT NOT NULL DEFAULT 'user',
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS orders (
@@ -40,6 +41,12 @@ CREATE TABLE IF NOT EXISTS orders (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 `);
+
+// ---- Lightweight migrations (safe to run every boot) ----
+try {
+  const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!cols.includes('role')) db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
+} catch (e) { console.warn('users migration skipped:', e.message); }
 
 /* ---------- Users ---------- */
 const _insertUser = db.prepare('INSERT INTO users (email, name, password_hash, verified) VALUES (?, ?, ?, 0)');
@@ -81,7 +88,30 @@ function getOrder(id) { return _getOrder.get(id); }
 function listOrders(userId) { return _listOrders.all(userId); }
 function setOrderStatus(id, status, paymentRef) { _setOrderStatus.run(status, paymentRef || null, id); }
 
+
+/* ---------- Profile & role ---------- */
+const _updateName = db.prepare('UPDATE users SET name = ? WHERE id = ?');
+const _setRole = db.prepare('UPDATE users SET role = ? WHERE email = ?');
+function updateName(id, name) { _updateName.run(name, id); return _getUserById.get(id); }
+function setRole(email, role) { _setRole.run(role, email); }
+
+/* ---------- Admin queries ---------- */
+const _allUsers = db.prepare('SELECT id, email, name, verified, role, created_at FROM users ORDER BY created_at DESC');
+const _allOrders = db.prepare(`SELECT o.*, u.email AS user_email, u.name AS user_name
+  FROM orders o LEFT JOIN users u ON u.id = o.user_id ORDER BY o.created_at DESC`);
+function listAllUsers() { return _allUsers.all(); }
+function listAllOrders() { return _allOrders.all(); }
+function adminStats() {
+  const users = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
+  const orders = db.prepare('SELECT COUNT(*) AS c FROM orders').get().c;
+  const revenue = db.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM orders WHERE status IN ('Processing','Completed')").get().s;
+  const byStatus = db.prepare('SELECT status, COUNT(*) AS c FROM orders GROUP BY status').all();
+  const byService = db.prepare('SELECT service, COUNT(*) AS c FROM orders GROUP BY service ORDER BY c DESC').all();
+  return { users, orders, revenue, byStatus, byService };
+}
+
 module.exports = {
   db, createUser, getUserByEmail, getUserById, markVerified, updatePassword,
   createOrder, getOrder, listOrders, setOrderStatus, nextOrderId,
+  updateName, setRole, listAllUsers, listAllOrders, adminStats,
 };

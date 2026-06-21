@@ -31,7 +31,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
 if (!process.env.JWT_SECRET) console.warn('JWT_SECRET not set — using an insecure dev secret. Set JWT_SECRET in production.');
 
 function signToken(user) { return jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' }); }
-function publicUser(u) { return { id: u.id, email: u.email, name: u.name, verified: !!u.verified }; }
+function publicUser(u) { return { id: u.id, email: u.email, name: u.name, verified: !!u.verified, role: u.role || 'user' }; }
 function authRequired(req, res, next) {
   const h = req.headers.authorization || '';
   const tok = h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -39,18 +39,48 @@ function authRequired(req, res, next) {
   try { req.user = jwt.verify(tok, JWT_SECRET); next(); }
   catch (e) { return res.status(401).json({ error: 'Invalid or expired session' }); }
 }
+function adminRequired(req, res, next) {
+  const u = dbi.getUserById(req.user.uid);
+  if (!u || u.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
+}
+// Emails listed in ADMIN_EMAILS (comma-separated) are auto-promoted to admin.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+function ensureAdmin(email) {
+  if (!email) return;
+  const e = email.toLowerCase();
+  if (ADMIN_EMAILS.includes(e)) {
+    const u = dbi.getUserByEmail(e);
+    if (u && u.role !== 'admin') dbi.setRole(e, 'admin');
+  }
+}
 
 const app = express();
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
 app.use(express.json());
+
+// ---- File uploads (multer, disk storage under server/uploads) ----
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    const safe = String(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, Date.now() + '-' + Math.round(Math.random() * 1e6) + '-' + safe);
+  },
+});
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024, files: 8 } }); // 10MB/file, max 8
+// Serve uploaded files back
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 const PROVIDER = (process.env.IMEI_PROVIDER || 'mock').toLowerCase();
 
 /* ---------- Free offline TAC database (model lookup, no API key) ----------
    Source: VTSTech/IMEIDB (open-source). Lets us identify the device MODEL and
    confirm the manufacturer from the first 8 digits of the IMEI for free. */
-const fs = require('fs');
-const path = require('path');
 let TACDB = {};
 try {
   TACDB = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'tacdb.json'), 'utf8'));
@@ -326,7 +356,7 @@ app.post('/api/auth/verify-otp', (req, res) => {
   if (code !== rec.code) return res.status(400).json({ error: 'Incorrect code' });
   otpStore.delete(email);
   const user = dbi.getUserByEmail(email);
-  if (user) { dbi.markVerified(email); const fresh = dbi.getUserByEmail(email); return res.json({ ok: true, verified: true, token: signToken(fresh), user: publicUser(fresh) }); }
+  if (user) { dbi.markVerified(email); ensureAdmin(email); const fresh = dbi.getUserByEmail(email); return res.json({ ok: true, verified: true, token: signToken(fresh), user: publicUser(fresh) }); }
   return res.json({ ok: true, verified: true });
 });
 
@@ -337,7 +367,8 @@ app.post('/api/auth/login', (req, res) => {
   const user = dbi.getUserByEmail(email);
   if (!user || !bcrypt.compareSync(password, user.password_hash)) return res.status(401).json({ error: 'Invalid email or password' });
   if (!user.verified) return res.status(403).json({ error: 'Email not verified', needsVerification: true });
-  return res.json({ ok: true, token: signToken(user), user: publicUser(user) });
+  ensureAdmin(email); const fresh = dbi.getUserByEmail(email);
+  return res.json({ ok: true, token: signToken(fresh), user: publicUser(fresh) });
 });
 
 app.get('/api/auth/me', authRequired, (req, res) => {
@@ -397,6 +428,107 @@ app.post('/api/payments/midtrans/notify', (req, res) => {
     const map = { settlement: 'Processing', capture: (fraud === 'accept' ? 'Processing' : 'Pending'), pending: 'Pending', deny: 'Failed', cancel: 'Failed', expire: 'Failed', refund: 'Failed' };
     dbi.setOrderStatus(n.order_id, map[status] || 'Pending', n.transaction_id);
   }
+  return res.json({ ok: true });
+});
+
+/* ---------- File uploads (auth required) ---------- */
+app.post('/api/uploads', authRequired, upload.array('files', 8), (req, res) => {
+  const files = (req.files || []).map(f => ({
+    name: f.originalname, stored: f.filename, size: f.size,
+    url: '/uploads/' + f.filename,
+  }));
+  return res.json({ ok: true, files });
+});
+
+/* ---------- Profile: update name (auth required) ---------- */
+app.patch('/api/profile', authRequired, (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim();
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  const user = dbi.updateName(req.user.uid, name);
+  return res.json({ ok: true, user: publicUser(user) });
+});
+
+/* ---------- Change password (auth required) ---------- */
+app.post('/api/auth/change-password', authRequired, (req, res) => {
+  const current = String((req.body && req.body.current) || '');
+  const next = String((req.body && req.body.next) || '');
+  if (next.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  const user = dbi.getUserById(req.user.uid);
+  if (!user || !bcrypt.compareSync(current, user.password_hash)) return res.status(401).json({ error: 'Current password is incorrect' });
+  dbi.updatePassword(user.email, bcrypt.hashSync(next, 10));
+  return res.json({ ok: true });
+});
+
+/* ============================================================
+   Forgot / Reset password (token via email, in-memory store)
+   POST /api/auth/forgot { email } -> emails a reset link/token
+   POST /api/auth/reset  { token, password } -> sets a new password
+   Tokens are single-use and expire (default 30 min). For production
+   use Redis/DB so they survive restarts. ============================================================ */
+const RESET_TTL = 30 * 60 * 1000;
+const resetStore = new Map(); // token -> { email, expires }
+function makeResetToken(email) {
+  const token = crypto.randomBytes(24).toString('hex');
+  resetStore.set(token, { email, expires: Date.now() + RESET_TTL });
+  return token;
+}
+function resetEmailHtml(link) {
+  return `<!doctype html><html><body style="margin:0;background:#f4f6f8;font-family:Inter,Arial,sans-serif;padding:32px">
+    <table role="presentation" width="100%"><tr><td align="center">
+    <table role="presentation" width="440" style="background:#fff;border-radius:14px;overflow:hidden;border:1px solid #e6e9ee">
+      <tr><td style="background:#266FA2;padding:22px 28px;color:#fff;font-size:18px;font-weight:700">ActivatePro</td></tr>
+      <tr><td style="padding:30px 28px">
+        <h1 style="margin:0 0 8px;font-size:20px;color:#0f172a">Reset your password</h1>
+        <p style="margin:0 0 22px;color:#475569;font-size:14px">Click the button below to choose a new password. This link expires in 30 minutes.</p>
+        <a href="${link}" style="display:inline-block;background:#266FA2;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600">Reset password</a>
+        <p style="margin:22px 0 0;color:#94a3b8;font-size:12.5px">If you didn't request this, you can safely ignore this email.</p>
+      </td></tr>
+    </table></td></tr></table></body></html>`;
+}
+app.post('/api/auth/forgot', async (req, res) => {
+  const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address' });
+  const user = dbi.getUserByEmail(email);
+  // Always respond ok to avoid leaking which emails exist.
+  if (!user) return res.json({ ok: true });
+  const token = makeResetToken(email);
+  const origin = process.env.PUBLIC_URL || (req.headers.origin || '');
+  const link = `${origin}/#/reset?token=${token}`;
+  try {
+    await sendBrevoEmail({
+      to: email, toName: user.name,
+      subject: 'Reset your ActivatePro password',
+      html: resetEmailHtml(link),
+      text: `Reset your ActivatePro password: ${link} (expires in 30 minutes)`,
+    });
+  } catch (e) {
+    if (process.env.OTP_DEV_RETURN === '1') return res.json({ ok: true, devToken: token, warning: 'email not sent (' + e.message + ') — dev mode' });
+    return res.status(502).json({ error: e.message || 'failed to send reset email' });
+  }
+  const out = { ok: true };
+  if (process.env.OTP_DEV_RETURN === '1') out.devToken = token;
+  return res.json(out);
+});
+app.post('/api/auth/reset', (req, res) => {
+  const token = String((req.body && req.body.token) || '').trim();
+  const password = String((req.body && req.body.password) || '');
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  const rec = resetStore.get(token);
+  if (!rec) return res.status(400).json({ error: 'Invalid or used reset link' });
+  if (Date.now() > rec.expires) { resetStore.delete(token); return res.status(400).json({ error: 'Reset link expired — request a new one' }); }
+  resetStore.delete(token);
+  dbi.updatePassword(rec.email, bcrypt.hashSync(password, 10));
+  return res.json({ ok: true });
+});
+
+/* ---------- Admin (role=admin required) ---------- */
+app.get('/api/admin/stats', authRequired, adminRequired, (_req, res) => res.json(dbi.adminStats()));
+app.get('/api/admin/orders', authRequired, adminRequired, (_req, res) => res.json({ orders: dbi.listAllOrders() }));
+app.get('/api/admin/users', authRequired, adminRequired, (_req, res) => res.json({ users: dbi.listAllUsers() }));
+app.patch('/api/admin/orders/:id', authRequired, adminRequired, (req, res) => {
+  const status = String((req.body && req.body.status) || '').trim();
+  if (!status) return res.status(400).json({ error: 'status is required' });
+  dbi.setOrderStatus(req.params.id, status, null);
   return res.json({ ok: true });
 });
 
