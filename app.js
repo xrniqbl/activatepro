@@ -3078,8 +3078,8 @@ route('/dashboard/profile', function () {
       <div class="cover" style="height:140px;background: linear-gradient(135deg, var(--primary), #4f46e5);position:relative">
         <div class="grid-mask" style="position:absolute;inset:0;opacity:.15"></div>
       </div>
-      <div style="padding:0 28px 24px;margin-top:-48px;display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap">
-        <div style="position:relative;z-index:2">
+      <div style="padding:18px 28px 24px;display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap">
+        <div style="position:relative;z-index:2;margin-top:-72px">
           <div class="profile-avatar" style="width:100px;height:100px;border-radius:28px;border:5px solid var(--card);background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;box-shadow:var(--shadow)">
             ${u.initials}
           </div>
@@ -3087,7 +3087,7 @@ route('/dashboard/profile', function () {
             ${I.camera(14)}
           </button>
         </div>
-        <div style="flex:1;min-width:200px;padding-bottom:4px">
+        <div style="flex:1;min-width:200px;padding-bottom:2px">
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <h2 style="font-size:24px;font-weight:800;color:var(--foreground);letter-spacing:-0.02em">${u.name}</h2>
             <span class="badge badge-info" style="font-weight:600;font-size:12px;padding:4px 10px;border-radius:8px">Pro plan</span>
