@@ -360,6 +360,14 @@ const I18N_PAIRS = [
   ['Failed orders are automatically refunded to your wallet or original payment method. Our 98.6% success rate is backed by a no-fix-no-fee guarantee.', 'Order yang gagal otomatis di-refund ke wallet atau metode pembayaran asal. Tingkat keberhasilan 98.6% kami didukung jaminan no-fix-no-fee.'],
   ['Absolutely. The reseller console offers volume pricing, a REST API, signed webhooks, and sub-account management for high-volume teams.', 'Tentu. Reseller console menyediakan harga volume, REST API, signed webhooks, dan manajemen sub-akun untuk tim dengan volume tinggi.'],
   ['We accept credit/debit cards, bank transfers, QRIS, GoPay, OVO, and Dana. All payments are secure and encrypted.', 'Kami menerima kartu kredit/debit, transfer bank, QRIS, GoPay, OVO, dan Dana. Semua pembayaran aman dan terenkripsi.'],
+  // Trust strip (titles + descriptions)
+  ['Original Process', 'Proses Original'],
+  ['Fast Process', 'Proses Cepat'],
+  ['Official Warranty', 'Garansi Resmi'],
+  ['Official IMEI-based method.', 'Metode resmi berbasis IMEI.'],
+  ['Done within 1\u201324 hours.', 'Selesai dalam 1\u201324 jam.'],
+  ['Secure & encrypted payment.', 'Pembayaran aman & terenkripsi.'],
+  ['No-fix-no-fee guarantee.', 'Jaminan no-fix-no-fee.'],
 ];
 
 let _i18nEN = null, _i18nID = null;
