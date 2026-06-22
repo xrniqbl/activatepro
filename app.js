@@ -368,6 +368,22 @@ const I18N_PAIRS = [
   ['Done within 1\u201324 hours.', 'Selesai dalam 1\u201324 jam.'],
   ['Secure & encrypted payment.', 'Pembayaran aman & terenkripsi.'],
   ['No-fix-no-fee guarantee.', 'Jaminan no-fix-no-fee.'],
+  // Wallet & Top Up
+  ['Wallet & Top Up', 'Dompet & Top Up'],
+  ['Secure Payment', 'Pembayaran Aman'],
+  ['Your current balance is shown below. You can top up your wallet instantly using multiple payment methods.', 'Saldo Anda saat ini ditunjukkan di bawah. Anda dapat melakukan top up dompet secara instan menggunakan berbagai metode pembayaran.'],
+  ['Available Balance', 'Saldo Tersedia'],
+  ['Select Preset Amount', 'Pilih Nominal Preset'],
+  ['Custom Amount', 'Nominal Kustom'],
+  ['Enter custom amount...', 'Masukkan nominal kustom...'],
+  ['Top Up Now', 'Isi Saldo Sekarang'],
+  ['Min. top up is Rp10.000', 'Min. top up adalah Rp10.000'],
+  ['Min. top up is $1.00', 'Min. top up adalah $1.00'],
+  ['Please enter a valid amount', 'Mohon masukkan nominal yang valid'],
+  ['Wallet topped up successfully!', 'Top up dompet berhasil!'],
+  ['Top Up Successful', 'Top Up Berhasil'],
+  ['Enter USD amount...', 'Masukkan nominal USD...'],
+  ['Please select an amount or enter a custom one', 'Silakan pilih nominal atau masukkan nominal kustom'],
 ];
 
 let _i18nEN = null, _i18nID = null;
@@ -2592,87 +2608,246 @@ function sw(checked) { return `<label class="switch"><input type="checkbox" ${ch
 /* ============================================================
    PROFILE PAGE
    ============================================================ */
+
+/* ============================================================
+   WALLET HELPERS (IDR <-> USD support)
+   ============================================================ */
+async function getWalletBalance() {
+  if (CONFIG.apiBase && getToken()) {
+    try {
+      const d = await apiAuthed('/api/billing');
+      if (d && d.wallet) return d.wallet.balance;
+    } catch (e) {
+      console.error("Failed to load backend balance:", e);
+    }
+  }
+  let bal = localStorage.getItem('ap-wallet-balance');
+  if (bal === null) {
+    bal = 1840000;
+    localStorage.setItem('ap-wallet-balance', bal);
+  }
+  return parseInt(bal, 10) || 0;
+}
+
+async function topUpWallet(amount) {
+  amount = parseInt(amount, 10) || 0;
+  if (amount <= 0) throw new Error('Amount must be positive');
+  if (CONFIG.apiBase && getToken()) {
+    const d = await apiAuthed('/api/billing/wallet/topup', { method: 'POST', body: { amount } });
+    if (d && d.ok) return d.balance;
+    throw new Error('Top up failed on server');
+  }
+  let bal = await getWalletBalance();
+  bal += amount;
+  localStorage.setItem('ap-wallet-balance', bal);
+  pushNotification('card', 'Wallet topped up', 'Balance is now ' + money(bal));
+  return bal;
+}
 route('/dashboard/profile', function () {
   const u = DATA.user;
-  const content = `<div style="max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:20px">
-    <div class="card" style="overflow:hidden">
-      <div class="cover"><div class="grid-mask" style="position:absolute;inset:0;opacity:.2"></div></div>
-      <div style="padding:0 24px 22px;margin-top:-46px;display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
-        <div style="position:relative"><div class="profile-avatar">${u.initials}</div>
-          <button class="btn btn-primary btn-icon btn-sm" style="position:absolute;bottom:-2px;right:-6px;width:30px;height:30px;border:2px solid #fff" data-toast="Upload new photo">${I.camera(15)}</button></div>
-        <div style="flex:1;min-width:160px;padding-bottom:4px">
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="font-size:22px">${u.name}</h2><span class="badge badge-info">Pro plan</span><span class="badge badge-success badge-dot">Verified</span></div>
-          <div class="muted" style="font-size:13.5px;margin-top:2px;display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span style="display:flex;align-items:center;gap:5px">${I.mail(14)} ${u.email}</span><span style="display:flex;align-items:center;gap:5px">${I.pin(14)} Jakarta, ID</span><span style="display:flex;align-items:center;gap:5px">${I.clock(14)} Member since Jan 2024</span></div>
+  const content = `<div style="max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:24px;padding: 10px">
+    <!-- Header Card -->
+    <div class="card" style="overflow:hidden;border:none;box-shadow:var(--shadow-lg);border-radius:16px">
+      <div class="cover" style="height:140px;background: linear-gradient(135deg, var(--primary), #4f46e5);position:relative">
+        <div class="grid-mask" style="position:absolute;inset:0;opacity:.15"></div>
+      </div>
+      <div style="padding:0 28px 24px;margin-top:-48px;display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap">
+        <div style="position:relative;z-index:2">
+          <div class="profile-avatar" style="width:100px;height:100px;border-radius:28px;border:5px solid var(--card);background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:800;box-shadow:var(--shadow)">
+            ${u.initials}
+          </div>
+          <button class="btn btn-primary btn-icon btn-sm" style="position:absolute;bottom:-4px;right:-4px;width:32px;height:32px;border:2px solid var(--card);border-radius:50%;box-shadow:var(--shadow-sm)" data-toast="Upload new photo">
+            ${I.camera(14)}
+          </button>
         </div>
-        <div style="display:flex;gap:8px;padding-bottom:4px"><a href="#/dashboard/settings" class="btn btn-outline btn-sm">${I.settings(15)} Settings</a><button class="btn btn-primary btn-sm" id="profileSave2" data-toast="Profile saved">Save changes</button></div>
+        <div style="flex:1;min-width:200px;padding-bottom:4px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <h2 style="font-size:24px;font-weight:800;color:var(--foreground);letter-spacing:-0.02em">${u.name}</h2>
+            <span class="badge badge-info" style="font-weight:600;font-size:12px;padding:4px 10px;border-radius:8px">Pro plan</span>
+            <span class="badge badge-success badge-dot" style="font-weight:600;font-size:12px;padding:4px 10px;border-radius:8px">Verified</span>
+          </div>
+          <div class="muted" style="font-size:13.5px;margin-top:6px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+            <span style="display:flex;align-items:center;gap:6px">${I.mail(14)} ${u.email}</span>
+            <span style="display:flex;align-items:center;gap:6px">${I.pin(14)} Jakarta, ID</span>
+            <span style="display:flex;align-items:center;gap:6px">${I.clock(14)} Member since Jan 2024</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;padding-bottom:4px">
+          <a href="#/dashboard/settings" class="btn btn-outline btn-sm" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:600">
+            ${I.settings(14)} Settings
+          </a>
+        </div>
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px" class="card-grid">
+    <!-- Stats Cards Grid -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:18px" class="card-grid">
       ${statCard('package','Lifetime orders','248','12.4%')}
-      ${statCard('wallet','Wallet balance','Rp1,84Jt')}
+      ${statCard('wallet','Wallet balance','<span id="profileWalletBalance" style="font-family:inherit">Loading...</span>')}
       ${statCard('checkCircle','Success rate','98.6%')}
       ${statCard('star','Loyalty points','3,420','5%')}
     </div>
 
-    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:20px" class="checkout-grid">
-      <div style="display:flex;flex-direction:column;gap:20px">
-        <div class="card card-pad">
-          <h3 style="font-size:16px;margin-bottom:4px">Personal information</h3>
-          <p class="muted" style="font-size:12.5px;margin-bottom:18px">Update your personal details and contact information.</p>
-          <form id="profileForm" style="display:flex;flex-direction:column;gap:15px">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="wiz-grid">
-              <div class="field"><label class="label">First name</label><input class="input" id="pfFirst" value="${(u.name||'').split(' ')[0]||''}"></div>
-              <div class="field"><label class="label">Last name</label><input class="input" id="pfLast" value="${(u.name||'').split(' ').slice(1).join(' ')||''}"></div>
+    <!-- Main Columns Grid -->
+    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:24px" class="checkout-grid">
+      <!-- Left Column -->
+      <div style="display:flex;flex-direction:column;gap:24px">
+        <!-- Personal Information Card -->
+        <div class="card card-pad" style="border-radius:14px;box-shadow:var(--shadow-sm)">
+          <h3 style="font-size:18px;font-weight:700;margin-bottom:6px">Personal information</h3>
+          <p class="muted" style="font-size:13px;margin-bottom:20px">Update your personal details and contact information.</p>
+
+          <form id="profileForm" style="display:flex;flex-direction:column;gap:18px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="wiz-grid">
+              <div class="field">
+                <label class="label" style="font-weight:600;font-size:13px">First name</label>
+                <input class="input" id="pfFirst" style="border-radius:8px" value="${(u.name||'').split(' ')[0]||''}">
+              </div>
+              <div class="field">
+                <label class="label" style="font-weight:600;font-size:13px">Last name</label>
+                <input class="input" id="pfLast" style="border-radius:8px" value="${(u.name||'').split(' ').slice(1).join(' ')||''}">
+              </div>
             </div>
-            <div class="field"><label class="label">Email address</label><div class="input-group"><span class="input-icon">${I.mail(17)}</span><input class="input" value="${u.email}"></div></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="wiz-grid">
-              <div class="field"><label class="label">WhatsApp number <span style="color:var(--danger)">*</span></label><div class="input-group"><span class="input-icon">${I.phone(17)}</span><input class="input" id="pfWhatsapp" type="tel" required placeholder="+62 812 3456 7890" value="${u.whatsapp || ''}"></div><div class="muted" style="font-size:11px;margin-top:5px">Wajib \u2014 admin menghubungi Anda di nomor ini saat ada pesanan.</div></div>
-              <div class="field"><label class="label">Company</label><div class="input-group"><span class="input-icon">${I.building(17)}</span><input class="input" value="MobileFix Co."></div></div>
+
+            <div class="field">
+              <label class="label" style="font-weight:600;font-size:13px">Email address</label>
+              <div class="input-group">
+                <span class="input-icon" style="color:var(--muted-foreground)">${I.mail(16)}</span>
+                <input class="input" style="border-radius:8px" value="${u.email}" readonly disabled title="Email cannot be changed">
+              </div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" class="wiz-grid">
-              <div class="field"><label class="label">Country</label><select class="select"><option>Indonesia</option><option>United States</option><option>United Kingdom</option><option>Singapore</option></select></div>
-              <div class="field"><label class="label">Timezone</label><select class="select"><option>(GMT+7) Jakarta</option><option>(GMT+0) London</option><option>(GMT-5) New York</option></select></div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="wiz-grid">
+              <div class="field">
+                <label class="label" style="font-weight:600;font-size:13px">WhatsApp number <span style="color:var(--danger)">*</span></label>
+                <div class="input-group">
+                  <span class="input-icon" style="color:var(--muted-foreground)">${I.phone(16)}</span>
+                  <input class="input" id="pfWhatsapp" style="border-radius:8px" type="tel" required placeholder="+62 812 3456 7890" value="${u.whatsapp || ''}">
+                </div>
+                <div class="muted" style="font-size:11.5px;margin-top:6px;line-height:1.4">Wajib — admin menghubungi Anda di nomor ini saat ada pesanan.</div>
+              </div>
+              <div class="field">
+                <label class="label" style="font-weight:600;font-size:13px">Company</label>
+                <div class="input-group">
+                  <span class="input-icon" style="color:var(--muted-foreground)">${I.building(16)}</span>
+                  <input class="input" style="border-radius:8px" value="MobileFix Co.">
+                </div>
+              </div>
             </div>
-            <div class="field"><label class="label">Bio</label><textarea class="textarea" placeholder="Tell us about your business…">Independent iPhone repair & activation reseller serving 500+ customers monthly.</textarea></div>
-            <div style="display:flex;gap:10px"><button type="submit" class="btn btn-primary">Save changes</button><button type="reset" class="btn btn-ghost">Cancel</button></div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="wiz-grid">
+              <div class="field">
+                <label class="label" style="font-weight:600;font-size:13px">Country</label>
+                <select class="select" style="border-radius:8px"><option>Indonesia</option><option>United States</option><option>United Kingdom</option><option>Singapore</option></select>
+              </div>
+              <div class="field">
+                <label class="label" style="font-weight:600;font-size:13px">Timezone</label>
+                <select class="select" style="border-radius:8px"><option>(GMT+7) Jakarta</option><option>(GMT+0) London</option><option>(GMT-5) New York</option></select>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="label" style="font-weight:600;font-size:13px">Bio</label>
+              <textarea class="textarea" style="border-radius:8px;min-height:80px;line-height:1.5" placeholder="Tell us about your business…">Independent iPhone repair & activation reseller serving 500+ customers monthly.</textarea>
+            </div>
+
+            <div style="display:flex;gap:12px;margin-top:4px">
+              <button type="submit" class="btn btn-primary" style="padding:10px 20px;border-radius:8px;font-weight:600">Save changes</button>
+              <button type="reset" class="btn btn-ghost" style="padding:10px 20px;border-radius:8px;font-weight:600">Cancel</button>
+            </div>
           </form>
         </div>
 
-        <div class="card card-pad">
-          <h3 style="font-size:16px;margin-bottom:16px">API keys</h3>
-          <div class="card" style="box-shadow:none;background:var(--surface);padding:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <span style="color:var(--primary)">${I.key(18)}</span>
-            <div style="flex:1;min-width:160px"><div style="font-weight:600;font-size:13px">Production key</div><div class="cell-mono muted" style="font-size:12px">ap_live_••••••••••••8f2a</div></div>
-            <button class="btn btn-outline btn-sm" data-toast="API key copied">${I.copy(14)} Copy</button>
-            <button class="btn btn-ghost btn-sm" data-toast="Key rotated">Rotate</button>
+        <!-- API Keys Card -->
+        <div class="card card-pad" style="border-radius:14px;box-shadow:var(--shadow-sm)">
+          <h3 style="font-size:18px;font-weight:700;margin-bottom:6px">API keys</h3>
+          <p class="muted" style="font-size:13px;margin-bottom:16px">Authenticate programmatic requests using your secret credentials.</p>
+          <div class="card" style="box-shadow:none;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+            <span style="color:var(--primary)">${I.key(20)}</span>
+            <div style="flex:1;min-width:180px">
+              <div style="font-weight:600;font-size:14px;color:var(--foreground)">Production key</div>
+              <div class="cell-mono muted" style="font-size:12.5px;margin-top:3px;letter-spacing:0.02em">ap_live_••••••••••••8f2a</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-outline btn-sm" style="border-radius:8px" data-toast="API key copied">${I.copy(14)} Copy</button>
+              <button class="btn btn-ghost btn-sm" style="border-radius:8px" data-toast="Key rotated">Rotate</button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:20px">
-        <div class="card card-pad">
-          <h3 style="font-size:15px;margin-bottom:14px">Security</h3>
-          <div class="set-row" style="padding-top:0"><div class="meta"><h4>Password</h4><p>Last changed 3 months ago</p></div><button class="btn btn-outline btn-sm" data-toast="Password dialog opened">Change</button></div>
-          <div class="set-row"><div class="meta"><h4>Two-factor auth</h4><p>Extra layer of security</p></div>${sw(true)}</div>
-          <div class="set-row"><div class="meta"><h4>Login alerts</h4><p>Email on new sign-in</p></div>${sw(true)}</div>
+      <!-- Right Column -->
+      <div style="display:flex;flex-direction:column;gap:24px">
+        <!-- New Wallet & Top Up Card -->
+        <div class="card card-pad" style="border-radius:14px;box-shadow:var(--shadow-sm);border-top: 4px solid var(--primary)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h3 style="font-size:18px;font-weight:700;color:var(--foreground)">Wallet & Top Up</h3>
+            <span class="badge badge-success" style="font-size:11px;padding:3px 8px;display:flex;align-items:center;gap:4px;border-radius:6px;font-weight:600">
+              ${I.checkCircle(11)} Secure
+            </span>
+          </div>
+          <p class="muted" style="font-size:12.5px;margin-bottom:16px">Isi saldo reseller Anda secara instan untuk kemudahan transaksi.</p>
+
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;margin-bottom:18px">
+            <div class="muted" style="font-size:11.5px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:4px">Saldo Tersedia</div>
+            <div id="walletCardBalance" style="font-size:28px;font-weight:800;color:var(--foreground);letter-spacing:-0.02em">
+              ...
+            </div>
+          </div>
+
+          <form id="topupForm" style="display:flex;flex-direction:column;gap:16px">
+            <div>
+              <label class="label" style="font-weight:600;font-size:13px;margin-bottom:8px;display:block">Pilih Nominal Preset</label>
+              <div id="topupPresets" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <!-- Filled dynamically based on _lang in _after -->
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="label" style="font-weight:600;font-size:13px;margin-bottom:6px;display:block">Nominal Kustom</label>
+              <div class="input-group">
+                <span class="input-icon" id="topupCurrencySymbol" style="font-weight:700;font-size:14px;color:var(--foreground)">Rp</span>
+                <input class="input" id="topupCustomAmount" type="number" min="1" style="border-radius:8px" placeholder="Masukkan nominal...">
+              </div>
+              <div id="topupEquivalent" class="muted" style="font-size:12px;margin-top:6px;display:none;line-height:1.4"></div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block" id="topupSubmitBtn" style="padding:11px;font-weight:600;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:var(--shadow-sm)">
+              ${I.card(16)} Top Up Sekarang
+            </button>
+          </form>
         </div>
-        <div class="card card-pad">
-          <h3 style="font-size:15px;margin-bottom:12px">Active sessions</h3>
-          ${[['MacBook Pro · Jakarta','Current session','monitor','success'],['iPhone 15 Pro · Jakarta','2 hours ago','smartphone',''],['Chrome · Singapore','3 days ago','globe','']].map(s=>`<div style="display:flex;align-items:center;gap:11px;padding:9px 0"><span class="stat-icon" style="width:34px;height:34px;background:var(--surface);color:var(--muted-foreground)">${I[s[2]](16)}</span><div style="flex:1"><div style="font-size:13px;font-weight:600">${s[0]}</div><div class="muted" style="font-size:11.5px">${s[1]}</div></div>${s[3]==='success'?'<span class="badge badge-success" style="font-size:11px">Active</span>':`<button class="btn btn-ghost btn-sm" data-toast="Session revoked">Revoke</button>`}</div>`).join('')}
+
+        <!-- Security Card -->
+        <div class="card card-pad" style="border-radius:14px;box-shadow:var(--shadow-sm)">
+          <h3 style="font-size:16px;font-weight:700;margin-bottom:14px">Security</h3>
+          <div class="set-row" style="padding-top:0;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:12px"><div class="meta"><h4>Password</h4><p class="muted" style="font-size:12px;margin-top:2px">Last changed 3 months ago</p></div><button class="btn btn-outline btn-sm" style="border-radius:8px" data-toast="Password dialog opened">Change</button></div>
+          <div class="set-row" style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding:12px 0"><div class="meta"><h4>Two-factor auth</h4><p class="muted" style="font-size:12px;margin-top:2px">Extra layer of security</p></div>${sw(true)}</div>
+          <div class="set-row" style="display:flex;justify-content:space-between;align-items:center;padding-top:12px"><div class="meta"><h4>Login alerts</h4><p class="muted" style="font-size:12px;margin-top:2px">Email on new sign-in</p></div>${sw(true)}</div>
         </div>
-        <div class="card card-pad" style="border-color:var(--danger)">
-          <h3 style="font-size:15px;margin-bottom:6px;color:var(--danger)">Danger zone</h3>
-          <p class="muted" style="font-size:12.5px;margin-bottom:14px">Permanently delete your account and all associated data. This cannot be undone.</p>
-          <button class="btn btn-danger btn-sm btn-block" data-toast="Account deletion requires confirmation">${I.trash(15)} Delete account</button>
+
+        <!-- Active Sessions Card -->
+        <div class="card card-pad" style="border-radius:14px;box-shadow:var(--shadow-sm)">
+          <h3 style="font-size:16px;font-weight:700;margin-bottom:12px">Active sessions</h3>
+          ${[['MacBook Pro · Jakarta','Current session','monitor','success'],['iPhone 15 Pro · Jakarta','2 hours ago','smartphone',''],['Chrome · Singapore','3 days ago','globe','']].map(s=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);last-child:border-none" class="session-row"><span class="stat-icon" style="width:36px;height:36px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--muted-foreground);display:flex;align-items:center;justify-content:center">${I[s[2]](16)}</span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600;color:var(--foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s[0]}</div><div class="muted" style="font-size:12px;margin-top:2px">${s[1]}</div></div>${s[3]==='success'?'<span class="badge badge-success" style="font-size:11px;padding:3px 8px;border-radius:6px;font-weight:600">Active</span>':`<button class="btn btn-ghost btn-sm" style="border-radius:6px;font-size:12px" data-toast="Session revoked">Revoke</button>`}</div>`).join('')}
+        </div>
+
+        <!-- Danger Zone Card -->
+        <div class="card card-pad" style="border-radius:14px;box-shadow:var(--shadow-sm);border:1px solid var(--danger-300);background:rgba(239,68,68,0.02)">
+          <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--danger)">Danger zone</h3>
+          <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.4">Permanently delete your account and all associated data. This cannot be undone.</p>
+          <button class="btn btn-danger btn-sm btn-block" style="border-radius:8px;padding:10px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px" data-toast="Account deletion requires confirmation">${I.trash(14)} Delete account</button>
         </div>
       </div>
     </div>
   </div>`;
   return shell('/dashboard/profile', CUSTOMER_NAV, 'Profile', 'Manage your account & personal info', content);
 });
+
 ROUTES['/dashboard/profile']._after = function () {
   bindShell();
+
+  // 1. Profile form submit handler
   const f = $('#profileForm');
   if (f) f.addEventListener('submit', e => {
     e.preventDefault();
@@ -2680,19 +2855,167 @@ ROUTES['/dashboard/profile']._after = function () {
     const last = ($('#pfLast') && $('#pfLast').value.trim()) || '';
     const name = (first + ' ' + last).trim();
     const wa = ($('#pfWhatsapp') && $('#pfWhatsapp').value.trim()) || '';
-    // WhatsApp is mandatory: admin needs it to contact the customer on every order.
+
     if (!wa) { toast('Nomor WhatsApp wajib diisi', 'alert'); const w = $('#pfWhatsapp'); if (w) w.focus(); return; }
     if (!/^[+]?[\d][\d\s().-]{6,}$/.test(wa)) { toast('Masukkan nomor WhatsApp yang valid', 'alert'); const w = $('#pfWhatsapp'); if (w) w.focus(); return; }
-    // Persist WhatsApp locally so it survives reloads and is available at checkout.
+
     DATA.user.whatsapp = wa;
     try { localStorage.setItem('ap-whatsapp', wa); } catch (err) {}
     try { localStorage.setItem(DEMO_USER_KEY, JSON.stringify(DATA.user)); } catch (err) {}
     if (!CONFIG.apiBase || !getToken()) { toast('Profile saved successfully'); return; }
     if (!name) { toast('Name is required', 'alert'); return; }
+
     apiAuthed('/api/profile', { method: 'PATCH', body: { name, whatsapp: wa } })
-      .then(d => { if (d && d.user) { DATA.user = { name: d.user.name, email: d.user.email, initials: initialsOf(d.user.name), role: d.user.role, whatsapp: d.user.whatsapp || wa }; } toast('Profile saved successfully'); render(); })
+      .then(d => { 
+        if (d && d.user) { 
+          DATA.user = { name: d.user.name, email: d.user.email, initials: initialsOf(d.user.name), role: d.user.role, whatsapp: d.user.whatsapp || wa }; 
+        } 
+        toast('Profile saved successfully'); 
+        render(); 
+      })
       .catch(err => toast(err.message, 'alert'));
   });
+
+  // 2. Refresh Wallet Displays
+  async function refreshWalletDisplays() {
+    try {
+      const bal = await getWalletBalance();
+      const elStat = $('#profileWalletBalance');
+      if (elStat) elStat.innerHTML = money(bal);
+
+      const elCard = $('#walletCardBalance');
+      if (elCard) elCard.innerHTML = money(bal);
+    } catch (err) {
+      console.error("Failed to refresh wallet displays:", err);
+    }
+  }
+  refreshWalletDisplays();
+
+  // 3. Populate presets dynamically
+  const presetsContainer = $('#topupPresets');
+  if (presetsContainer) {
+    const isEn = (_lang === 'en');
+    const presets = isEn 
+      ? [ { label: '$5.00', idrVal: 80000, value: 5 }, 
+          { label: '$10.00', idrVal: 160000, value: 10 }, 
+          { label: '$25.00', idrVal: 400000, value: 25 }, 
+          { label: '$50.00', idrVal: 800000, value: 50 } ]
+      : [ { label: 'Rp50.000', idrVal: 50000, value: 50000 }, 
+          { label: 'Rp100.000', idrVal: 100000, value: 100000 }, 
+          { label: 'Rp250.000', idrVal: 250000, value: 250000 }, 
+          { label: 'Rp500.000', idrVal: 500000, value: 500000 } ];
+
+    presetsContainer.innerHTML = presets.map((p, i) => 
+      `<button type="button" class="btn btn-outline btn-preset" style="padding: 10px; border-radius: 8px; font-weight: 600; font-size: 13.5px" data-val="${p.value}" data-idr="${p.idrVal}">${p.label}</button>`
+    ).join('');
+
+    const presetButtons = $$('.btn-preset', presetsContainer);
+    const customInp = $('#topupCustomAmount');
+
+    presetButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        presetButtons.forEach(x => x.classList.remove('btn-primary'));
+        presetButtons.forEach(x => x.classList.add('btn-outline'));
+
+        btn.classList.remove('btn-outline');
+        btn.classList.add('btn-primary');
+
+        customInp.value = btn.dataset.val;
+        updateEquivalent(parseFloat(btn.dataset.val) || 0);
+      });
+    });
+
+    if (customInp) {
+      customInp.addEventListener('input', () => {
+        const val = parseFloat(customInp.value) || 0;
+        presetButtons.forEach(btn => {
+          if (parseFloat(btn.dataset.val) === val) {
+            btn.classList.remove('btn-outline');
+            btn.classList.add('btn-primary');
+          } else {
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-outline');
+          }
+        });
+        updateEquivalent(val);
+      });
+    }
+  }
+
+  const curSymbol = $('#topupCurrencySymbol');
+  if (curSymbol) {
+    curSymbol.textContent = (_lang === 'en') ? '$' : 'Rp';
+  }
+  const customInp = $('#topupCustomAmount');
+  if (customInp) {
+    customInp.placeholder = (_lang === 'en') ? 'Enter USD amount...' : 'Masukkan nominal...';
+  }
+
+  function updateEquivalent(val) {
+    const equiv = $('#topupEquivalent');
+    if (!equiv) return;
+    if (_lang === 'en' && val > 0) {
+      const idr = val * USD_RATE;
+      equiv.style.display = 'block';
+      equiv.innerHTML = `Equivalent: <b style="color:var(--foreground)">Rp ${idr.toLocaleString('id-ID')}</b> (Rate: $1 = Rp ${USD_RATE.toLocaleString('id-ID')})`;
+    } else {
+      equiv.style.display = 'none';
+    }
+  }
+
+  // 4. Submit Topup Form
+  const topupForm = $('#topupForm');
+  if (topupForm) {
+    topupForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const customInp = $('#topupCustomAmount');
+      if (!customInp) return;
+
+      const inputVal = parseFloat(customInp.value) || 0;
+      if (inputVal <= 0) {
+        toast('Please select an amount or enter a custom one', 'alert');
+        customInp.focus();
+        return;
+      }
+
+      const isEn = (_lang === 'en');
+      const idrAmount = isEn ? Math.round(inputVal * USD_RATE) : Math.round(inputVal);
+
+      if (idrAmount < 10000) {
+        if (isEn) {
+          toast('Min. top up is $1.00', 'alert');
+        } else {
+          toast('Min. top up adalah Rp10.000', 'alert');
+        }
+        return;
+      }
+
+      const submitBtn = $('#topupSubmitBtn');
+      const originalText = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.textContent = isEn ? 'Processing...' : 'Memproses...';
+
+      try {
+        const newBalance = await topUpWallet(idrAmount);
+        toast('Wallet topped up successfully!');
+        refreshWalletDisplays();
+
+        topupForm.reset();
+        $$('.btn-preset', presetsContainer).forEach(x => {
+          x.classList.remove('btn-primary');
+          x.classList.add('btn-outline');
+        });
+        const equiv = $('#topupEquivalent');
+        if (equiv) equiv.style.display = 'none';
+
+      } catch (err) {
+        toast(err.message, 'alert');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    });
+  }
 };
 
 /* ============================================================
@@ -2757,7 +3080,7 @@ route('/dashboard/settings', function () {
       ${[['•••• 4242','Visa · Expires 08/28','Default'],['•••• 8801','Mastercard · Expires 03/27','']].map(c=>`<div class="card" style="box-shadow:none;background:var(--surface);padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:10px"><span style="color:var(--primary)">${I.card(20)}</span><div style="flex:1"><div style="font-weight:600;font-size:13.5px">${c[0]}</div><div class="muted" style="font-size:12px">${c[1]}</div></div>${c[2]?`<span class="badge badge-info">${c[2]}</span>`:`<button class="btn btn-ghost btn-sm" data-toast="Set as default">Make default</button>`}<button class="btn btn-ghost btn-icon btn-sm" data-toast="Card removed">${I.trash(15)}</button></div>`).join('')}
     </div>
     <div class="card card-pad">
-      <h3 style="font-size:16px;margin-bottom:2px">Wallet</h3><p class="muted" style="font-size:12.5px;margin-bottom:6px">Current balance: <b style="color:var(--foreground)">Rp1.840.000</b></p>
+      <h3 style="font-size:16px;margin-bottom:2px">Wallet</h3><p class="muted" style="font-size:12.5px;margin-bottom:6px">Current balance: <b style="color:var(--foreground)" id="settingsWalletBalance">Rp1.840.000</b></p>
       ${setRow('Auto-reload', 'Top up Rp250.000 when balance drops below Rp100.000', sw(true))}
       ${setRow('Reseller volume billing', 'Consolidate into monthly invoice', sw(false))}
     </div>
@@ -2969,6 +3292,12 @@ ROUTES['/dashboard/settings']._after = function () {
       pushNotification('key', 'New API key created', newKey.label + ' (' + newKey.env + ')');
       toast('New API key created'); renderKeys();
     }
+  });
+
+  // Load dynamic wallet balance in Settings -> Billing
+  getWalletBalance().then(bal => {
+    const el = $('#settingsWalletBalance');
+    if (el) el.innerHTML = money(bal);
   });
 };
 
