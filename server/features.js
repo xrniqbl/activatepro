@@ -122,6 +122,27 @@ CREATE TABLE IF NOT EXISTS invoices (
 );
 `);
 
+/* ---------- Vouchers (persistent, admin-managed, used at checkout) ---------- */
+db.exec(`
+CREATE TABLE IF NOT EXISTS vouchers (
+  code       TEXT PRIMARY KEY,
+  type       TEXT NOT NULL DEFAULT 'percent',
+  value      INTEGER NOT NULL DEFAULT 0,
+  note       TEXT,
+  active     INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+function seedVouchers() {
+  const c = db.prepare('SELECT COUNT(*) AS c FROM vouchers').get().c;
+  if (c > 0) return;
+  const ins = db.prepare('INSERT INTO vouchers (code, type, value, note, active) VALUES (?,?,?,?,?)');
+  ins.run('WELCOME10', 'percent', 10, 'New customer discount', 1);
+  ins.run('HEMAT50K', 'fixed', 50000, 'Fixed Rp50.000 off', 1);
+  ins.run('PROMO25', 'percent', 25, 'Seasonal promo (disabled)', 0);
+}
+seedVouchers();
+
 /* ---------- Default pricing seed (mirrors the front-end tables) ---------- */
 const DEFAULT_PRICING = {
   icloud: [
@@ -429,6 +450,111 @@ function mount(app, { authRequired, adminRequired }) {
     const w = db.prepare('SELECT balance FROM wallet WHERE user_id = ?').get(uid(req));
     pushNotification(uid(req), 'card', 'Wallet topped up', 'Balance is now Rp' + w.balance.toLocaleString('id-ID'));
     res.json({ ok: true, balance: w.balance });
+  });
+
+  /* ---------- Admin: Wallet management ---------- */
+  app.get('/api/admin/wallets', authRequired, adminRequired, (_req, res) => {
+    const rows = db.prepare(`SELECT u.id AS user_id, u.email, u.name, u.role,
+        COALESCE(w.balance, 0) AS balance
+      FROM users u LEFT JOIN wallet w ON w.user_id = u.id
+      ORDER BY balance DESC, u.created_at DESC`).all();
+    res.json({ wallets: rows });
+  });
+  app.post('/api/admin/wallets/:userId/adjust', authRequired, adminRequired, (req, res) => {
+    const userId = parseInt(req.params.userId, 10);
+    const target = dbi.getUserById(userId);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    const mode = (req.body && req.body.mode) || 'credit';
+    const amount = parseInt((req.body && req.body.amount), 10) || 0;
+    if (mode !== 'set' && amount <= 0) return res.status(400).json({ error: 'amount must be positive' });
+    if (mode === 'set' && amount < 0) return res.status(400).json({ error: 'amount must be >= 0' });
+    ensureWallet(userId);
+    if (mode === 'set') db.prepare('UPDATE wallet SET balance = ? WHERE user_id = ?').run(amount, userId);
+    else if (mode === 'debit') db.prepare('UPDATE wallet SET balance = MAX(0, balance - ?) WHERE user_id = ?').run(amount, userId);
+    else db.prepare('UPDATE wallet SET balance = balance + ? WHERE user_id = ?').run(amount, userId);
+    const w = db.prepare('SELECT balance FROM wallet WHERE user_id = ?').get(userId);
+    pushNotification(userId, 'card', 'Wallet adjusted by admin', 'New balance: Rp' + w.balance.toLocaleString('id-ID'));
+    logActivity({ actor: req.user.email, action: 'adjusted wallet (' + mode + ' ' + amount + ') for', target: target.email, level: 'info', ip: clientIp(req) });
+    res.json({ ok: true, balance: w.balance });
+  });
+
+  /* ---------- Admin: Vouchers (persistent) ---------- */
+  app.get('/api/admin/vouchers', authRequired, adminRequired, (_req, res) => {
+    const rows = db.prepare('SELECT code, type, value, note, active, created_at FROM vouchers ORDER BY created_at DESC').all();
+    res.json({ vouchers: rows.map(v => ({ code: v.code, type: v.type, value: v.value, note: v.note, active: !!v.active })) });
+  });
+  app.post('/api/admin/vouchers', authRequired, adminRequired, (req, res) => {
+    const b = req.body || {};
+    const code = String(b.code || '').trim().toUpperCase();
+    const type = b.type === 'fixed' ? 'fixed' : 'percent';
+    const value = parseInt(b.value, 10) || 0;
+    if (!code || value <= 0) return res.status(400).json({ error: 'code and positive value required' });
+    if (db.prepare('SELECT code FROM vouchers WHERE code = ?').get(code)) return res.status(409).json({ error: 'Voucher code already exists' });
+    db.prepare('INSERT INTO vouchers (code, type, value, note, active) VALUES (?,?,?,?,1)').run(code, type, value, String(b.note || '').trim());
+    logActivity({ actor: req.user.email, action: 'created voucher', target: code, level: 'info', ip: clientIp(req) });
+    res.json({ ok: true });
+  });
+  app.patch('/api/admin/vouchers/:code', authRequired, adminRequired, (req, res) => {
+    const code = String(req.params.code || '').toUpperCase();
+    const row = db.prepare('SELECT * FROM vouchers WHERE code = ?').get(code);
+    if (!row) return res.status(404).json({ error: 'Voucher not found' });
+    const active = (req.body && typeof req.body.active === 'boolean') ? (req.body.active ? 1 : 0) : (row.active ? 0 : 1);
+    db.prepare('UPDATE vouchers SET active = ? WHERE code = ?').run(active, code);
+    res.json({ ok: true, active: !!active });
+  });
+  app.delete('/api/admin/vouchers/:code', authRequired, adminRequired, (req, res) => {
+    const code = String(req.params.code || '').toUpperCase();
+    db.prepare('DELETE FROM vouchers WHERE code = ?').run(code);
+    logActivity({ actor: req.user.email, action: 'deleted voucher', target: code, level: 'warning', ip: clientIp(req) });
+    res.json({ ok: true });
+  });
+  // Customer-facing voucher validation (used at checkout).
+  app.post('/api/vouchers/validate', authRequired, (req, res) => {
+    const code = String((req.body && req.body.code) || '').trim().toUpperCase();
+    if (!code) return res.status(400).json({ error: 'code required' });
+    const v = db.prepare('SELECT code, type, value, active FROM vouchers WHERE code = ?').get(code);
+    if (!v || !v.active) return res.status(404).json({ error: 'Invalid or inactive voucher' });
+    res.json({ ok: true, voucher: { code: v.code, type: v.type, value: v.value } });
+  });
+
+  /* ---------- Admin: User actions (role / suspend / delete) ---------- */
+  app.patch('/api/admin/users/:id', authRequired, adminRequired, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const target = dbi.getUserById(id);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    const b = req.body || {};
+    if (b.role && ['user', 'admin'].includes(b.role)) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(b.role, id);
+    if (b.status && ['Active', 'Suspended'].includes(b.status)) db.prepare('UPDATE users SET status = ? WHERE id = ?').run(b.status, id);
+    const u = dbi.getUserById(id);
+    logActivity({ actor: req.user.email, action: 'updated user', target: target.email, level: 'info', ip: clientIp(req) });
+    res.json({ ok: true, user: { id: u.id, email: u.email, name: u.name, role: u.role, status: u.status, verified: u.verified } });
+  });
+  app.delete('/api/admin/users/:id', authRequired, adminRequired, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (id === uid(req)) return res.status(400).json({ error: 'You cannot delete your own account' });
+    const target = dbi.getUserById(id);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    logActivity({ actor: req.user.email, action: 'deleted user', target: target.email, level: 'warning', ip: clientIp(req) });
+    res.json({ ok: true });
+  });
+
+  /* ---------- Admin: Real revenue series for the dashboard chart ---------- */
+  app.get('/api/admin/revenue-series', authRequired, adminRequired, (_req, res) => {
+    const rows = db.prepare(`SELECT substr(created_at,1,7) AS ym,
+        COALESCE(SUM(amount),0) AS revenue, COUNT(*) AS orders
+      FROM orders WHERE status IN ('Processing','Completed')
+      GROUP BY ym ORDER BY ym DESC LIMIT 6`).all();
+    res.json({ series: rows.reverse() });
+  });
+
+  /* ---------- Admin: Webhook retry (real re-delivery) ---------- */
+  app.post('/api/admin/webhooks/:eventId/retry', authRequired, adminRequired, async (req, res) => {
+    const log = db.prepare('SELECT * FROM webhook_logs WHERE event_id = ?').get(req.params.eventId);
+    if (!log) return res.status(404).json({ error: 'Webhook log not found' });
+    const r = await emitWebhook(log.user_id, log.event, { retried_event_id: log.event_id });
+    logActivity({ actor: req.user.email, action: 'retried webhook', target: log.event_id, level: 'info', ip: clientIp(req) });
+    res.json({ ok: true, status: r ? r.status : 0, ms: r ? r.ms : 0 });
   });
 }
 

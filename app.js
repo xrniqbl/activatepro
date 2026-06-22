@@ -384,6 +384,39 @@ const I18N_PAIRS = [
   ['Top Up Successful', 'Top Up Berhasil'],
   ['Enter USD amount...', 'Masukkan nominal USD...'],
   ['Please select an amount or enter a custom one', 'Silakan pilih nominal atau masukkan nominal kustom'],
+  // Admin: wallet, users, vouchers, common
+  ['Wallet management', 'Manajemen Dompet'],
+  ['View and adjust reseller wallet balances', 'Lihat dan sesuaikan saldo dompet reseller'],
+  ['Total balance', 'Total saldo'],
+  ['Wallets', 'Dompet'],
+  ['Currency mode', 'Mode mata uang'],
+  ['Reseller wallets', 'Dompet reseller'],
+  ['Adjust balances manually \u2014 credit, debit, or set', 'Sesuaikan saldo secara manual \u2014 kredit, debit, atau set'],
+  ['Search user by name or email\u2026', 'Cari pengguna berdasarkan nama atau email\u2026'],
+  ['Export CSV', 'Ekspor CSV'],
+  ['Adjust', 'Sesuaikan'],
+  ['Action', 'Aksi'],
+  ['Credit (add)', 'Kredit (tambah)'],
+  ['Debit (subtract)', 'Debit (kurangi)'],
+  ['Set exact balance', 'Set saldo pasti'],
+  ['Manage user', 'Kelola pengguna'],
+  ['Promote to admin', 'Jadikan admin'],
+  ['Demote to user', 'Turunkan ke pengguna'],
+  ['Suspend account', 'Tangguhkan akun'],
+  ['Reactivate account', 'Aktifkan kembali akun'],
+  ['Delete user', 'Hapus pengguna'],
+  ['Delete user?', 'Hapus pengguna?'],
+  ['Search users\u2026', 'Cari pengguna\u2026'],
+  ['Send invite', 'Kirim undangan'],
+  ['Delete voucher?', 'Hapus voucher?'],
+  ['Are you sure?', 'Apakah Anda yakin?'],
+  ['Confirm', 'Konfirmasi'],
+  ['Delete', 'Hapus'],
+  ['Prev', 'Sebelumnya'],
+  ['Next', 'Berikutnya'],
+  ['Suspended', 'Ditangguhkan'],
+  ['Active', 'Aktif'],
+  ['Reseller wallet', 'Dompet reseller'],
 ];
 
 let _i18nEN = null, _i18nID = null;
@@ -694,6 +727,73 @@ function openModal(title, bodyHTML) {
   document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', esc); } });
   bindGlobal();
   return overlay;
+}
+
+/* ---------- Reusable confirm dialog (uses the modal system) ---------- */
+function confirmAction(opts) {
+  opts = opts || {};
+  const title = opts.title || 'Are you sure?';
+  const message = opts.message || '';
+  const confirmLabel = opts.confirmLabel || 'Confirm';
+  const cancelLabel = opts.cancelLabel || 'Cancel';
+  const danger = !!opts.danger;
+  openModal(title, `
+    <p class="muted" style="font-size:13.5px;line-height:1.5;margin-bottom:18px">${message}</p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" id="confirmCancel" style="border-radius:8px">${cancelLabel}</button>
+      <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="confirmOk" style="border-radius:8px">${confirmLabel}</button>
+    </div>`);
+  const ok = document.querySelector('#confirmOk');
+  const cancel = document.querySelector('#confirmCancel');
+  if (cancel) cancel.addEventListener('click', () => { closeModal(); if (typeof opts.onCancel === 'function') opts.onCancel(); });
+  if (ok) ok.addEventListener('click', () => { closeModal(); if (typeof opts.onConfirm === 'function') opts.onConfirm(); });
+}
+
+/* ---------- Lightweight client-side table paginator ----------
+   Renders `rows` (array of data objects) into `tbody` page-by-page using
+   `renderRow(item)` -> HTML string. Injects a pager bar after the table.
+   `onDraw()` runs after each page render so callers can (re)bind action buttons. */
+function mountPager(tbody, rows, renderRow, pageSize, onDraw) {
+  if (!tbody) return;
+  pageSize = pageSize || 10;
+  const host = tbody.closest('.card') || tbody.closest('.table-wrapper') || tbody.parentElement;
+  if (host) { const old = host.querySelector(':scope > .ap-pager'); if (old) old.remove(); }
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+  let page = 1;
+  let pgEl = null;
+  function draw() {
+    const start = (page - 1) * pageSize;
+    const slice = rows.slice(start, start + pageSize);
+    tbody.innerHTML = slice.map(renderRow).join('') || `<tr><td colspan="99" class="muted" style="text-align:center;padding:24px">No data</td></tr>`;
+    if (pgEl) {
+      pgEl.querySelector('.ap-pg-info').textContent = 'Page ' + page + ' / ' + pages + ' \u00b7 ' + rows.length + ' total';
+      pgEl.querySelector('[data-pg="prev"]').disabled = page <= 1;
+      pgEl.querySelector('[data-pg="next"]').disabled = page >= pages;
+    }
+    if (typeof onDraw === 'function') onDraw();
+    bindGlobal();
+  }
+  if (rows.length > pageSize && host) {
+    pgEl = document.createElement('div');
+    pgEl.className = 'ap-pager';
+    pgEl.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid var(--border);gap:10px;flex-wrap:wrap';
+    pgEl.innerHTML = '<span class="muted ap-pg-info" style="font-size:12.5px"></span><div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" data-pg="prev" style="border-radius:8px">Prev</button><button class="btn btn-outline btn-sm" data-pg="next" style="border-radius:8px">Next</button></div>';
+    host.appendChild(pgEl);
+    pgEl.querySelector('[data-pg="prev"]').addEventListener('click', () => { if (page > 1) { page--; draw(); } });
+    pgEl.querySelector('[data-pg="next"]').addEventListener('click', () => { if (page < pages) { page++; draw(); } });
+  }
+  draw();
+}
+
+/* ---------- CSV export helper ---------- */
+function exportCSV(filename, headers, rows) {
+  const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [headers.map(esc).join(',')].concat(rows.map(r => r.map(esc).join(',')));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
 /* ---------- Modern client-side PDF invoice generator (no external libs) ---------- */
@@ -1226,6 +1326,7 @@ const ADMIN_NAV = [
   { k: '/admin', label: 'Dashboard', icon: 'layout' },
   { k: '/admin/orders', label: 'Order management', icon: 'package' },
   { k: '/admin/users', label: 'User management', icon: 'users' },
+  { k: '/admin/wallets', label: 'Wallet management', icon: 'wallet' },
   { sec: 'Configuration' },
   { k: '/admin/pricing', label: 'Pricing management', icon: 'dollar' },
   { k: '/admin/vouchers', label: 'Voucher settings', icon: 'ticket' },
@@ -1839,18 +1940,28 @@ ROUTES['/dashboard/checkout']._after = function () {
     return total;
   }
   const apply = $('#applyPromo'), promo = $('#promoInput'), msg = $('#promoMsg');
-  if (apply) apply.addEventListener('click', () => {
-    const code = (promo.value || '').trim().toUpperCase();
-    if (!code) { msg.textContent = ''; return; }
-    const s = seedStore();
-    const v = (s.vouchers || []).find(x => x.code === code);
-    if (!v) { applied = null; msg.style.color = 'var(--danger)'; msg.textContent = 'Invalid voucher code.'; refreshTotals(); return; }
-    if (!v.active) { applied = null; msg.style.color = 'var(--danger)'; msg.textContent = 'This voucher is no longer active.'; refreshTotals(); return; }
+  function applyVoucher(v) {
     applied = { code: v.code, type: v.type, value: v.value, discount: discountFor(v) };
     msg.style.color = 'var(--success)';
     msg.textContent = 'Applied ' + v.code + ' \u2014 you save ' + money(applied.discount) + (v.type === 'percent' ? ' (' + v.value + '%)' : '') + '.';
     refreshTotals();
     toast('Voucher ' + v.code + ' applied');
+  }
+  if (apply) apply.addEventListener('click', () => {
+    const code = (promo.value || '').trim().toUpperCase();
+    if (!code) { msg.textContent = ''; return; }
+    // Backend validation when signed in; local store as a demo fallback.
+    if (CONFIG.apiBase && getToken()) {
+      apiAuthed('/api/vouchers/validate', { method: 'POST', body: { code } })
+        .then(d => { if (d && d.voucher) applyVoucher(d.voucher); })
+        .catch(() => { applied = null; msg.style.color = 'var(--danger)'; msg.textContent = 'Invalid or inactive voucher.'; refreshTotals(); });
+      return;
+    }
+    const s = seedStore();
+    const v = (s.vouchers || []).find(x => x.code === code);
+    if (!v) { applied = null; msg.style.color = 'var(--danger)'; msg.textContent = 'Invalid voucher code.'; refreshTotals(); return; }
+    if (!v.active) { applied = null; msg.style.color = 'var(--danger)'; msg.textContent = 'This voucher is no longer active.'; refreshTotals(); return; }
+    applyVoucher(v);
   });
   if (promo) promo.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); apply && apply.click(); } });
 
@@ -2245,10 +2356,18 @@ ROUTES['/admin']._after = function () {
         <td>${o.device||'\u2014'}</td><td class="muted" style="font-size:12.5px">${o.service||''}</td>
         <td>${statusBadge(o.status)}</td><td style="font-weight:600">${money(o.amount||0)}</td></tr>`).join('') || tb.innerHTML;
     }).catch(()=>{});
+    apiAuthed('/api/admin/revenue-series').then(d => {
+      const s = (d && d.series) || [];
+      if (!s.length || !window._revChart) return;
+      window._revChart.data.labels = s.map(r => r.ym);
+      window._revChart.data.datasets[0].data = s.map(r => Math.round((r.revenue || 0) / 1e6));
+      window._revChart.data.datasets[1].data = s.map(r => r.orders || 0);
+      window._revChart.update();
+    }).catch(()=>{});
   }
   if (!window.Chart) return;
   const grid = { grid: { color: '#eef0f3' }, ticks: { color: '#71717a', font: { size: 11 } }, border: { display: false } };
-  new Chart($('#revChart'), { type: 'bar', data: { labels: ['Jan','Feb','Mar','Apr','May','Jun'], datasets: [
+  window._revChart = new Chart($('#revChart'), { type: 'bar', data: { labels: ['Jan','Feb','Mar','Apr','May','Jun'], datasets: [
     { label: 'Revenue', data: [42,51,58,67,74,84], backgroundColor: '#18181b', borderRadius: 6, barPercentage: .6, yAxisID: 'y' },
     { type: 'line', label: 'Orders', data: [980,1120,1290,1480,1640,1842], borderColor: '#71717a', backgroundColor: 'transparent', borderWidth: 2.5, tension: .4, pointRadius: 0, yAxisID: 'y1' }
   ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, scales: { x: grid, y: { ...grid, beginAtZero: true }, y1: { position: 'right', grid: { display: false }, ticks: { color: '#71717a', font: { size: 11 } }, border: { display: false } } } } });
@@ -2267,46 +2386,82 @@ route('/admin/orders', function () {
     </div></td></tr>`).join('');
   const content = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px">
-      <div class="segmented"><button class="active">All</button><button>Pending</button><button>Processing</button><button>Failed</button></div>
-      <div style="display:flex;gap:8px"><div class="input-group hidden sm:block" style="width:220px"><span class="input-icon">${I.search(16)}</span><input class="input" placeholder="Search orders…" style="height:38px"></div><button class="btn btn-outline btn-sm">${I.download(15)} Export</button></div>
+      <div class="segmented" id="ordFilter"><button class="active" data-f="All">All</button><button data-f="Pending">Pending</button><button data-f="Processing">Processing</button><button data-f="Failed">Failed</button></div>
+      <div style="display:flex;gap:8px"><div class="input-group hidden sm:block" style="width:220px"><span class="input-icon">${I.search(16)}</span><input class="input" id="ordSearch" placeholder="Search orders…" style="height:38px"></div><button class="btn btn-outline btn-sm" id="ordExport">${I.download(15)} Export</button></div>
     </div>
     <div class="card"><div class="table-wrapper"><table class="data"><thead><tr><th style="width:36px"><input type="checkbox" style="accent-color:var(--primary)"></th><th>Order</th><th>Device</th><th>IMEI</th><th>Status</th><th>Date</th><th>Amount</th><th>Actions</th></tr></thead><tbody id="adminOrdersBody">${rows}</tbody></table></div></div>`;
   return shell('/admin/orders', ADMIN_NAV, 'Order management', 'Manage and process all orders', content);
 });
 ROUTES['/admin/orders']._after = function () {
   bindShell();
-  // Admin can update customer-facing order tracking (works in demo + backend).
+  const backend = !!(CONFIG.apiBase && getToken());
+  let ORDERS = DATA.orders.map(o => ({ id: o.id, device: o.device, service: o.service, imei: o.imei, status: o.status, date: o.date, amount: o.amount }));
+  let filter = 'All';
+
   const applyStage = (id, stage) => {
-    const s = getStore(); s.tracking = s.tracking || {}; s.tracking[id] = { stage: stage, updatedAt: Date.now() };
-    setStore(s);
+    const s = getStore(); s.tracking = s.tracking || {}; s.tracking[id] = { stage: stage, updatedAt: Date.now() }; setStore(s);
     const ord = DATA.orders.find(o => o.id === id); if (ord) ord.status = stageStatus(stage);
-    pushNotification('truck', 'Order ' + id + ' updated', 'Tracking status set to "' + TRACK_STAGES[stage] + '".');
+    const r = ORDERS.find(o => o.id === id); if (r) r.status = stageStatus(stage);
+    pushNotification('truck', 'Order ' + id + ' updated', 'Tracking status set to \"' + TRACK_STAGES[stage] + '\".');
   };
-  $$('.track-sel').forEach(sel => sel.addEventListener('change', () => {
-    applyStage(sel.dataset.track, +sel.value);
-    toast('Order ' + sel.dataset.track + ' \u2192 ' + TRACK_STAGES[+sel.value]);
-  }));
-  $$('[data-complete-demo]').forEach(b => b.addEventListener('click', () => {
-    const id = b.dataset.completeDemo; applyStage(id, 4); toast('Order ' + id + ' marked complete'); navigate('/admin/orders');
-  }));
-  if (!CONFIG.apiBase || !getToken()) return;
-  apiAuthed('/api/admin/orders').then(d => {
-    const tb = $('#adminOrdersBody');
-    if (!tb || !d.orders) return;
-    tb.innerHTML = d.orders.map(o => `<tr>
-      <td><input type="checkbox" style="accent-color:var(--primary)"></td>
-      <td class="cell-mono" style="color:var(--primary);font-weight:600">${o.id}</td>
-      <td><div style="font-weight:600">${o.device||'\u2014'}</div><div class="muted" style="font-size:12px">${o.service||''}</div></td>
-      <td class="cell-mono">${o.imei||'\u2014'}</td><td>${statusBadge(o.status)}</td><td class="muted">${(o.created_at||'').slice(0,10)}</td><td style="font-weight:600">${money(o.amount||0)}</td>
-      <td><div style="display:flex;gap:4px"><button class="btn btn-soft btn-sm" data-complete="${o.id}">Complete</button><button class="btn btn-ghost btn-icon btn-sm" data-toast="Order actions">${I.dots(16)}</button></div></td></tr>`).join('') || `<tr><td colspan="8" class="muted" style="text-align:center;padding:24px">No orders yet</td></tr>`;
-    // Wire the Complete buttons to a real status update.
-    $$('[data-complete]').forEach(b => b.addEventListener('click', () => {
-      const id = b.dataset.complete; b.disabled = true;
-      apiAuthed('/api/admin/orders/' + id, { method: 'PATCH', body: { status: 'Completed' } })
-        .then(() => { toast('Order ' + id + ' marked complete'); ROUTES['/admin/orders']._after(); })
-        .catch(err => { toast(err.message, 'alert'); b.disabled = false; });
+
+  function rowHTML(o) {
+    return `<tr>
+      <td><input type=\"checkbox\" style=\"accent-color:var(--primary)\"></td>
+      <td class=\"cell-mono\" style=\"color:var(--primary);font-weight:600\">${o.id}</td>
+      <td><div style=\"font-weight:600\">${o.device || '\u2014'}</div><div class=\"muted\" style=\"font-size:12px\">${o.service || ''}</div></td>
+      <td class=\"cell-mono\">${o.imei || '\u2014'}</td><td>${statusBadge(o.status)}</td><td class=\"muted\">${o.date || ''}</td><td style=\"font-weight:600\">${money(o.amount || 0)}</td>
+      <td><div style=\"display:flex;gap:6px;align-items:center;flex-wrap:wrap\">
+        <select class=\"input track-sel\" data-track=\"${o.id}\" title=\"Update order tracking\" style=\"height:32px;width:140px;font-size:12px;padding:0 8px\">${TRACK_STAGES.map((st, si) => `<option value=\"${si}\" ${si === orderStage(o.id, o.status) ? 'selected' : ''}>${st}</option>`).join('')}</select>
+        <button class=\"btn btn-soft btn-sm\" data-ocomplete=\"${o.id}\">Complete</button>
+      </div></td></tr>`;
+  }
+
+  function bindRowActions() {
+    $$('.track-sel').forEach(sel => sel.addEventListener('change', () => {
+      const id = sel.dataset.track, stage = +sel.value;
+      applyStage(id, stage);
+      toast('Order ' + id + ' \u2192 ' + TRACK_STAGES[stage]);
+      if (backend) apiAuthed('/api/admin/orders/' + id, { method: 'PATCH', body: { status: stageStatus(stage) } }).catch(() => {});
     }));
-  }).catch(()=>{});
+    $$('[data-ocomplete]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.ocomplete;
+      if (backend) {
+        b.disabled = true;
+        apiAuthed('/api/admin/orders/' + id, { method: 'PATCH', body: { status: 'Completed' } })
+          .then(() => { toast('Order ' + id + ' marked complete'); applyStage(id, 4); draw(); })
+          .catch(err => { toast(err.message, 'alert'); b.disabled = false; });
+      } else { applyStage(id, 4); toast('Order ' + id + ' marked complete'); draw(); }
+    }));
+  }
+
+  function draw() {
+    let rows = ORDERS;
+    if (filter !== 'All') rows = rows.filter(o => o.status === filter);
+    const q = (($('#ordSearch') && $('#ordSearch').value) || '').trim().toLowerCase();
+    if (q) rows = rows.filter(o => [o.id, o.device, o.service, o.imei].some(x => String(x || '').toLowerCase().includes(q)));
+    mountPager($('#adminOrdersBody'), rows, rowHTML, 10, bindRowActions);
+  }
+
+  const fc = $('#ordFilter');
+  if (fc) $$('button', fc).forEach(btn => btn.addEventListener('click', () => {
+    $$('button', fc).forEach(x => x.classList.remove('active')); btn.classList.add('active');
+    filter = btn.dataset.f || 'All'; draw();
+  }));
+  if ($('#ordSearch')) $('#ordSearch').addEventListener('input', draw);
+  if ($('#ordExport')) $('#ordExport').addEventListener('click', () => {
+    exportCSV('orders.csv', ['Order', 'Device', 'Service', 'IMEI', 'Status', 'Date', 'Amount (IDR)'], ORDERS.map(o => [o.id, o.device, o.service, o.imei, o.status, o.date, o.amount]));
+  });
+
+  draw();
+
+  if (backend) {
+    apiAuthed('/api/admin/orders').then(d => {
+      if (!d || !d.orders) return;
+      ORDERS = d.orders.map(o => ({ id: o.id, device: o.device, service: o.service, imei: o.imei, status: o.status, date: (o.created_at || '').slice(0, 10), amount: o.amount }));
+      draw();
+    }).catch(() => {});
+  }
 };
 
 /* ---- Admin: User management ---- */
@@ -2322,24 +2477,222 @@ route('/admin/users', function () {
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px" class="card-grid">
       ${statCard('users','Total users','3,217','9.8%')}${statCard('checkCircle','Active','3,140')}${statCard('shield','Resellers','284','12%')}${statCard('alert','Suspended','7', '2', false)}
     </div>
-    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Team & users</h3><button class="btn btn-primary btn-sm" data-toast="Invite sent">${I.plusCircle(15)} Invite user</button></div>
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap"><h3 style="font-size:16px">Team & users</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><div class="input-group hidden sm:block" style="width:200px"><span class="input-icon">${I.search(16)}</span><input class="input" id="userSearch" placeholder="Search users…" style="height:36px"></div><button class="btn btn-outline btn-sm" id="userExport">${I.download(15)} Export</button><button class="btn btn-primary btn-sm" id="userInvite">${I.plusCircle(15)} Invite user</button></div></div>
       <div class="table-wrapper"><table class="data"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Orders</th><th>Joined</th><th></th></tr></thead><tbody id="adminUsersBody">${rows}</tbody></table></div></div>`;
   return shell('/admin/users', ADMIN_NAV, 'User management', 'Manage team members and resellers', content);
 });
 ROUTES['/admin/users']._after = function () {
   bindShell();
-  if (!CONFIG.apiBase || !getToken()) return;
-  apiAuthed('/api/admin/users').then(d => {
-    const tb = $('#adminUsersBody');
-    if (!tb || !d.users) return;
-    const roleBadge = r => ({ admin: 'info', user: 'neutral' }[r] || 'neutral');
-    tb.innerHTML = d.users.map(u => `<tr>
-      <td><div style="display:flex;align-items:center;gap:10px"><span class="avatar" style="width:34px;height:34px;font-size:12px">${initialsOf(u.name||u.email)}</span><div><div style="font-weight:600">${u.name||'\u2014'}</div><div class="muted" style="font-size:12px">${u.email}</div></div></div></td>
-      <td><span class="badge badge-${roleBadge(u.role)}">${u.role||'user'}</span></td>
-      <td>${u.verified ? '<span class="badge badge-success badge-dot">Verified</span>' : '<span class="badge badge-warning badge-dot">Unverified</span>'}</td>
-      <td style="font-weight:600">\u2014</td><td class="muted">${(u.created_at||'').slice(0,10)}</td>
-      <td><button class="btn btn-ghost btn-icon btn-sm" data-toast="Edit user">${I.dots(16)}</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">No users yet</td></tr>`;
-  }).catch(()=>{});
+  const backend = !!(CONFIG.apiBase && getToken());
+  let USERS = DATA.admins.map(u => ({ id: null, name: u.name, email: u.email, role: u.role, status: u.status, verified: true, joined: u.joined, orders: u.orders }));
+  const roleBadge = r => ({ Owner: 'info', Operator: 'success', Support: 'neutral', Reseller: 'warning', admin: 'info', user: 'neutral' }[r] || 'neutral');
+
+  function rowHTML(u) {
+    const sb = (u.status === 'Suspended')
+      ? '<span class="badge badge-danger badge-dot">Suspended</span>'
+      : (u.verified ? '<span class="badge badge-success badge-dot">Active</span>' : '<span class="badge badge-warning badge-dot">Unverified</span>');
+    return `<tr>
+      <td><div style="display:flex;align-items:center;gap:10px"><span class="avatar" style="width:34px;height:34px;font-size:12px">${initialsOf(u.name || u.email)}</span><div><div style="font-weight:600">${u.name || '\u2014'}</div><div class="muted" style="font-size:12px">${u.email}</div></div></div></td>
+      <td><span class="badge badge-${roleBadge(u.role)}">${u.role || 'user'}</span></td>
+      <td>${sb}</td>
+      <td style="font-weight:600">${u.orders != null ? Number(u.orders).toLocaleString() : '\u2014'}</td><td class="muted">${u.joined || ''}</td>
+      <td><button class="btn btn-ghost btn-icon btn-sm" data-umanage="${u.email}" title="Manage user">${I.dots(16)}</button></td></tr>`;
+  }
+
+  function openManage(u) {
+    const isAdminRole = u.role === 'admin';
+    const isSuspended = u.status === 'Suspended';
+    openModal('Manage \u2014 ' + (u.name || u.email), `
+      <p class="muted" style="font-size:13px;margin-bottom:16px">${u.email}</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="btn btn-outline btn-block" id="umRole" style="border-radius:8px;justify-content:flex-start">${I.shield(15)} ${isAdminRole ? 'Demote to user' : 'Promote to admin'}</button>
+        <button class="btn btn-outline btn-block" id="umSuspend" style="border-radius:8px;justify-content:flex-start">${isSuspended ? I.checkCircle(15) + ' Reactivate account' : I.alert(15) + ' Suspend account'}</button>
+        <button class="btn btn-danger btn-block" id="umDelete" style="border-radius:8px;justify-content:flex-start">${I.trash(15)} Delete user</button>
+      </div>`);
+    const rl = document.querySelector('#umRole');
+    if (rl) rl.addEventListener('click', () => updateUser(u, { role: isAdminRole ? 'user' : 'admin' }));
+    const sp = document.querySelector('#umSuspend');
+    if (sp) sp.addEventListener('click', () => updateUser(u, { status: isSuspended ? 'Active' : 'Suspended' }));
+    const dl = document.querySelector('#umDelete');
+    if (dl) dl.addEventListener('click', () => {
+      closeModal();
+      confirmAction({ title: 'Delete user?', message: 'This permanently removes <b>' + u.email + '</b> and cannot be undone.', confirmLabel: 'Delete', danger: true, onConfirm: () => deleteUser(u) });
+    });
+  }
+
+  function updateUser(u, patch) {
+    if (backend && u.id != null) {
+      apiAuthed('/api/admin/users/' + u.id, { method: 'PATCH', body: patch })
+        .then(d => { closeModal(); toast('User updated'); if (d && d.user) { u.role = d.user.role; u.status = d.user.status; } draw(); })
+        .catch(err => toast(err.message, 'alert'));
+    } else { Object.assign(u, patch); closeModal(); toast('User updated (demo)'); draw(); }
+  }
+  function deleteUser(u) {
+    if (backend && u.id != null) {
+      apiAuthed('/api/admin/users/' + u.id, { method: 'DELETE' })
+        .then(() => { toast('User deleted'); USERS = USERS.filter(x => x !== u); draw(); })
+        .catch(err => toast(err.message, 'alert'));
+    } else { USERS = USERS.filter(x => x !== u); toast('User deleted (demo)'); draw(); }
+  }
+
+  function bindRowActions() {
+    $$('[data-umanage]').forEach(b => b.addEventListener('click', () => {
+      const u = USERS.find(x => x.email === b.dataset.umanage); if (u) openManage(u);
+    }));
+  }
+  function draw() {
+    const q = (($('#userSearch') && $('#userSearch').value) || '').trim().toLowerCase();
+    const rows = !q ? USERS : USERS.filter(u => (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q));
+    mountPager($('#adminUsersBody'), rows, rowHTML, 10, bindRowActions);
+  }
+
+  if ($('#userSearch')) $('#userSearch').addEventListener('input', draw);
+  if ($('#userExport')) $('#userExport').addEventListener('click', () => {
+    exportCSV('users.csv', ['Name', 'Email', 'Role', 'Status'], USERS.map(u => [u.name || '', u.email, u.role || 'user', u.status || 'Active']));
+  });
+  if ($('#userInvite')) $('#userInvite').addEventListener('click', () => {
+    openModal('Invite user', `
+      <div class="field" style="margin-bottom:12px"><label class="label" style="font-weight:600;font-size:13px">Email address</label><div class="input-group"><span class="input-icon">${I.mail(16)}</span><input class="input" id="invEmail" type="email" placeholder="name@company.com" style="border-radius:8px"></div></div>
+      <div class="field" style="margin-bottom:16px"><label class="label" style="font-weight:600;font-size:13px">Role</label><select class="select" id="invRole" style="border-radius:8px"><option value="user">User</option><option value="admin">Admin</option></select></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-ghost" id="invCancel" style="border-radius:8px">Cancel</button><button class="btn btn-primary" id="invSend" style="border-radius:8px">Send invite</button></div>`);
+    const cancel = document.querySelector('#invCancel'); if (cancel) cancel.addEventListener('click', closeModal);
+    const send = document.querySelector('#invSend'); if (send) send.addEventListener('click', () => {
+      const em = (document.querySelector('#invEmail') || {}).value || '';
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('Enter a valid email', 'alert'); return; }
+      closeModal(); toast('Invitation sent to ' + em);
+    });
+  });
+
+  draw();
+
+  if (backend) {
+    apiAuthed('/api/admin/users').then(d => {
+      if (!d || !d.users) return;
+      USERS = d.users.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role || 'user', status: u.status || 'Active', verified: !!u.verified, joined: (u.created_at || '').slice(0, 10), orders: null }));
+      draw();
+    }).catch(() => {});
+  }
+};
+
+/* ---- Admin: Wallet management ---- */
+route('/admin/wallets', function () {
+  const content = `
+    <div id="walletAdminStats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px" class="card-grid">
+      ${statCard('wallet','Total balance','<span id="waTotal">\u2014</span>')}
+      ${statCard('users','Wallets','<span id="waCount">\u2014</span>')}
+      ${statCard('dollar','Currency mode','<span id="waCur">\u2014</span>')}
+    </div>
+    <div class="card card-pad" style="margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="input-group" style="flex:1;min-width:220px"><span class="input-icon">${I.search(16)}</span><input class="input" id="walletSearch" placeholder="Search user by name or email\u2026" style="height:38px"></div>
+      <button class="btn btn-outline btn-sm" id="walletExport">${I.download(15)} Export CSV</button>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--border)"><h3 style="font-size:16px">Reseller wallets</h3><span class="muted" style="font-size:12.5px">Adjust balances manually \u2014 credit, debit, or set</span></div>
+      <div class="table-wrapper"><table class="data"><thead><tr><th>User</th><th>Role</th><th style="text-align:right">Balance</th><th style="text-align:right">Actions</th></tr></thead><tbody id="walletAdminBody"><tr><td colspan="4" class="muted" style="text-align:center;padding:24px">Loading wallets\u2026</td></tr></tbody></table></div>
+    </div>`;
+  return shell('/admin/wallets', ADMIN_NAV, 'Wallet management', 'View and adjust reseller wallet balances', content);
+});
+ROUTES['/admin/wallets']._after = function () {
+  bindShell();
+  let WALLETS = [];
+
+  function rowHTML(w) {
+    return `<tr>
+      <td><div style="display:flex;align-items:center;gap:10px"><span class="avatar" style="width:34px;height:34px;font-size:12px">${initialsOf(w.name || w.email)}</span><div style="min-width:0"><div style="font-weight:600">${w.name || '\u2014'}</div><div class="muted" style="font-size:12px">${w.email}</div></div></div></td>
+      <td><span class="badge badge-${w.role === 'admin' ? 'info' : 'neutral'}">${w.role || 'user'}</span></td>
+      <td style="text-align:right;font-weight:700">${money(w.balance || 0)}</td>
+      <td style="text-align:right"><button class="btn btn-soft btn-sm" data-wadjust="${w.user_id}" style="border-radius:8px">${I.wallet(14)} Adjust</button></td>
+    </tr>`;
+  }
+
+  function applyFilterAndRender() {
+    const q = (($('#walletSearch') && $('#walletSearch').value) || '').trim().toLowerCase();
+    const filtered = !q ? WALLETS : WALLETS.filter(w => (w.name || '').toLowerCase().includes(q) || (w.email || '').toLowerCase().includes(q));
+    mountPager($('#walletAdminBody'), filtered, rowHTML, 10, bindAdjust);
+    const total = WALLETS.reduce((s, w) => s + (w.balance || 0), 0);
+    if ($('#waTotal')) $('#waTotal').innerHTML = money(total);
+    if ($('#waCount')) $('#waCount').textContent = String(WALLETS.length);
+    if ($('#waCur')) $('#waCur').textContent = (_lang === 'en') ? 'USD' : 'IDR';
+  }
+
+  function openAdjust(w) {
+    const isEn = (_lang === 'en');
+    const sym = isEn ? '$' : 'Rp';
+    openModal('Adjust wallet \u2014 ' + (w.name || w.email), `
+      <p class="muted" style="font-size:13px;margin-bottom:14px">Current balance: <b style="color:var(--foreground)">${money(w.balance || 0)}</b></p>
+      <div class="field" style="margin-bottom:14px">
+        <label class="label" style="font-weight:600;font-size:13px">Action</label>
+        <select class="select" id="adjMode" style="border-radius:8px">
+          <option value="credit">Credit (add)</option>
+          <option value="debit">Debit (subtract)</option>
+          <option value="set">Set exact balance</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:6px">
+        <label class="label" style="font-weight:600;font-size:13px">Amount</label>
+        <div class="input-group"><span class="input-icon" style="font-weight:700">${sym}</span><input class="input" id="adjAmount" type="number" min="0" step="any" style="border-radius:8px" placeholder="${isEn ? 'Enter USD amount\u2026' : 'Masukkan nominal\u2026'}"></div>
+        <div id="adjEquiv" class="muted" style="font-size:11.5px;margin-top:6px;display:none"></div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+        <button class="btn btn-ghost" id="adjCancel" style="border-radius:8px">Cancel</button>
+        <button class="btn btn-primary" id="adjOk" style="border-radius:8px">Apply</button>
+      </div>`);
+    const amt = document.querySelector('#adjAmount');
+    const equiv = document.querySelector('#adjEquiv');
+    if (amt) amt.addEventListener('input', () => {
+      const v = parseFloat(amt.value) || 0;
+      if (isEn && v > 0 && equiv) { equiv.style.display = 'block'; equiv.innerHTML = 'Equivalent: <b style="color:var(--foreground)">Rp ' + (v * USD_RATE).toLocaleString('id-ID') + '</b>'; }
+      else if (equiv) equiv.style.display = 'none';
+    });
+    const cancel = document.querySelector('#adjCancel');
+    if (cancel) cancel.addEventListener('click', closeModal);
+    const ok = document.querySelector('#adjOk');
+    if (ok) ok.addEventListener('click', () => {
+      const mode = (document.querySelector('#adjMode') || {}).value || 'credit';
+      const raw = parseFloat((document.querySelector('#adjAmount') || {}).value) || 0;
+      if (mode !== 'set' && raw <= 0) { toast('Please enter a valid amount', 'alert'); return; }
+      const idr = isEn ? Math.round(raw * USD_RATE) : Math.round(raw);
+      doAdjust(w, mode, idr);
+    });
+  }
+
+  function doAdjust(w, mode, idr) {
+    if (CONFIG.apiBase && getToken()) {
+      apiAuthed('/api/admin/wallets/' + w.user_id + '/adjust', { method: 'POST', body: { mode: mode, amount: idr } })
+        .then(d => { closeModal(); toast('Wallet updated'); w.balance = d.balance; const ix = WALLETS.findIndex(x => x.user_id === w.user_id); if (ix >= 0) WALLETS[ix].balance = d.balance; applyFilterAndRender(); })
+        .catch(err => toast(err.message, 'alert'));
+    } else {
+      // Demo/local mode: only the signed-in demo user's wallet is local.
+      let bal = parseInt(localStorage.getItem('ap-wallet-balance') || '1840000', 10) || 0;
+      if (mode === 'set') bal = idr; else if (mode === 'debit') bal = Math.max(0, bal - idr); else bal += idr;
+      localStorage.setItem('ap-wallet-balance', bal);
+      w.balance = bal; const ix = WALLETS.findIndex(x => x.user_id === w.user_id); if (ix >= 0) WALLETS[ix].balance = bal;
+      closeModal(); toast('Wallet updated (demo)'); applyFilterAndRender();
+    }
+  }
+
+  function bindAdjust() {
+    $$('[data-wadjust]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.wadjust;
+      const w = WALLETS.find(x => String(x.user_id) === String(id));
+      if (w) openAdjust(w);
+    }));
+  }
+
+  if ($('#walletSearch')) $('#walletSearch').addEventListener('input', applyFilterAndRender);
+  if ($('#walletExport')) $('#walletExport').addEventListener('click', () => {
+    exportCSV('wallets.csv', ['User', 'Email', 'Role', 'Balance (IDR)'], WALLETS.map(w => [w.name || '', w.email, w.role || 'user', w.balance || 0]));
+  });
+
+  if (CONFIG.apiBase && getToken()) {
+    apiAuthed('/api/admin/wallets').then(d => { WALLETS = (d && d.wallets) || []; applyFilterAndRender(); })
+      .catch(() => { const tb = $('#walletAdminBody'); if (tb) tb.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;padding:24px">Could not load wallets</td></tr>'; });
+  } else {
+    // Demo mode: show the signed-in demo user with their local wallet balance.
+    const bal = parseInt(localStorage.getItem('ap-wallet-balance') || '1840000', 10) || 0;
+    WALLETS = [{ user_id: 'demo', name: DATA.user.name, email: DATA.user.email, role: DATA.user.role || 'user', balance: bal }];
+    applyFilterAndRender();
+  }
 };
 
 /* ---- Admin: Pricing management (connected to backend) ---- */
@@ -2417,7 +2770,7 @@ route('/admin/vouchers', function () {
       <button class="btn btn-ghost btn-icon btn-sm" data-vdel="${i}" title="Delete">${I.trash(16)}</button>
     </div></td></tr>`).join('') || `<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">No vouchers yet \u2014 create one above.</td></tr>`;
   const content = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px" class="card-grid">
+    <div id="voucherStats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px" class="card-grid">
       ${statCard('ticket','Total vouchers', String(vouchers.length))}
       ${statCard('checkCircle','Active', String(vouchers.filter(v => v.active).length))}
       ${statCard('dollar','Connected to', 'Checkout')}
@@ -2440,27 +2793,73 @@ route('/admin/vouchers', function () {
 });
 ROUTES['/admin/vouchers']._after = function () {
   bindShell();
+  const backend = !!(CONFIG.apiBase && getToken());
+  let VOUCHERS = [];
+
+  function loadLocal() {
+    const s = seedStore();
+    return (s.vouchers || []).map(v => ({ code: v.code, type: v.type, value: v.value, note: v.note, active: v.active }));
+  }
+  function rowHTML(v) {
+    return `<tr>
+      <td class="cell-mono" style="font-weight:700;color:var(--primary)">${v.code}</td>
+      <td>${v.type === 'percent' ? v.value + '%' : money(v.value)}</td>
+      <td class="muted" style="font-size:12.5px">${v.note || ''}</td>
+      <td>${v.active ? '<span class="badge badge-success badge-dot">Active</span>' : '<span class="badge badge-neutral badge-dot">Disabled</span>'}</td>
+      <td><div style="display:flex;gap:4px;justify-content:flex-end">
+        <button class="btn btn-soft btn-sm" data-vtoggle="${v.code}">${v.active ? 'Disable' : 'Enable'}</button>
+        <button class="btn btn-ghost btn-icon btn-sm" data-vdel="${v.code}" title="Delete">${I.trash(16)}</button>
+      </div></td></tr>`;
+  }
+  function bindRowActions() {
+    $$('[data-vtoggle]').forEach(b => b.addEventListener('click', () => toggleVoucher(b.dataset.vtoggle)));
+    $$('[data-vdel]').forEach(b => b.addEventListener('click', () => {
+      const code = b.dataset.vdel;
+      confirmAction({ title: 'Delete voucher?', message: 'Delete <b>' + code + '</b>? Customers will no longer be able to use it.', confirmLabel: 'Delete', danger: true, onConfirm: () => deleteVoucher(code) });
+    }));
+  }
+  function renderList() {
+    mountPager($('#voucherBody'), VOUCHERS, rowHTML, 10, bindRowActions);
+    const st = $('#voucherStats');
+    if (st) st.innerHTML = statCard('ticket', 'Total vouchers', String(VOUCHERS.length)) + statCard('checkCircle', 'Active', String(VOUCHERS.filter(v => v.active).length)) + statCard('dollar', 'Connected to', 'Checkout');
+  }
+  function reload() {
+    if (backend) apiAuthed('/api/admin/vouchers').then(d => { VOUCHERS = (d && d.vouchers) || []; renderList(); }).catch(() => { VOUCHERS = loadLocal(); renderList(); });
+    else { VOUCHERS = loadLocal(); renderList(); }
+  }
+
+  function createVoucher(code, type, value, note) {
+    if (backend) {
+      apiAuthed('/api/admin/vouchers', { method: 'POST', body: { code, type, value, note } })
+        .then(() => { toast('Voucher ' + code + ' created'); reload(); })
+        .catch(err => toast(err.message, 'alert'));
+    } else {
+      const s = getStore(); s.vouchers = s.vouchers || [];
+      if (s.vouchers.some(v => v.code === code)) { toast('That code already exists', 'alert'); return; }
+      s.vouchers.unshift({ code, type, value, active: true, note }); setStore(s);
+      toast('Voucher ' + code + ' created'); reload();
+    }
+  }
+  function toggleVoucher(code) {
+    if (backend) apiAuthed('/api/admin/vouchers/' + encodeURIComponent(code), { method: 'PATCH', body: {} }).then(() => { toast('Voucher ' + code + ' updated'); reload(); }).catch(err => toast(err.message, 'alert'));
+    else { const s = getStore(); const v = (s.vouchers || []).find(x => x.code === code); if (v) { v.active = !v.active; setStore(s); toast('Voucher ' + code + (v.active ? ' enabled' : ' disabled')); reload(); } }
+  }
+  function deleteVoucher(code) {
+    if (backend) apiAuthed('/api/admin/vouchers/' + encodeURIComponent(code), { method: 'DELETE' }).then(() => { toast('Voucher ' + code + ' deleted'); reload(); }).catch(err => toast(err.message, 'alert'));
+    else { const s = getStore(); s.vouchers = (s.vouchers || []).filter(x => x.code !== code); setStore(s); toast('Voucher ' + code + ' deleted'); reload(); }
+  }
+
   const f = $('#voucherForm');
   if (f) f.addEventListener('submit', e => {
     e.preventDefault();
     const code = (f.code.value || '').trim().toUpperCase();
     const value = parseInt(f.value.value, 10);
     if (!code || !value || value <= 0) { toast('Enter a valid code and value', 'alert'); return; }
-    const s = getStore(); s.vouchers = s.vouchers || [];
-    if (s.vouchers.some(v => v.code === code)) { toast('That code already exists', 'alert'); return; }
-    s.vouchers.unshift({ code: code, type: f.type.value, value: value, active: true, note: (f.note.value || '').trim() });
-    setStore(s);
-    toast('Voucher ' + code + ' created');
-    navigate('/admin/vouchers');
+    createVoucher(code, f.type.value, value, (f.note.value || '').trim());
+    f.reset();
   });
-  $$('[data-vtoggle]').forEach(b => b.addEventListener('click', () => {
-    const s = getStore(); const v = s.vouchers[+b.dataset.vtoggle];
-    if (v) { v.active = !v.active; setStore(s); toast('Voucher ' + v.code + (v.active ? ' enabled' : ' disabled')); navigate('/admin/vouchers'); }
-  }));
-  $$('[data-vdel]').forEach(b => b.addEventListener('click', () => {
-    const s = getStore(); const v = s.vouchers[+b.dataset.vdel];
-    if (v) { s.vouchers.splice(+b.dataset.vdel, 1); setStore(s); toast('Voucher ' + v.code + ' deleted'); navigate('/admin/vouchers'); }
-  }));
+
+  reload();
 };
 
 /* ---- Admin: Webhook logs ---- */
@@ -2522,8 +2921,8 @@ route('/admin/activity', function () {
     <td class="cell-mono muted" style="font-size:12px">${r[4]}</td><td class="cell-mono muted" style="font-size:12px">${r[5]}</td></tr>`).join('');
   const content = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px">
-      <div class="segmented"><button class="active">All events</button><button>Users</button><button>System</button><button>Security</button></div>
-      <div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm">${I.filter(15)} Filter</button><button class="btn btn-outline btn-sm">${I.download(15)} Export CSV</button></div>
+      <div class="segmented" id="actFilter"><button class="active" data-f="All">All events</button><button data-f="Users">Users</button><button data-f="System">System</button><button data-f="Security">Security</button></div>
+      <div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" id="actExport">${I.download(15)} Export CSV</button></div>
     </div>
     <div class="card"><div class="table-wrapper"><table class="data"><thead><tr><th>Actor</th><th>Action</th><th>Level</th><th>Timestamp</th><th>IP address</th></tr></thead><tbody id="adminActivityBody">${rows}</tbody></table></div>
       <div style="padding:14px 20px;border-top:1px solid var(--border)" class="muted" style="font-size:12.5px">Showing 7 of 18,402 events · retained for 90 days</div></div>`;
@@ -2531,24 +2930,52 @@ route('/admin/activity', function () {
 });
 ROUTES['/admin/activity']._after = function () {
   bindShell();
-  if (!CONFIG.apiBase || !getToken()) return;
   const lvl = (l) => l === 'success' ? 'success' : l === 'warning' ? 'warning' : l === 'danger' ? 'danger' : 'info';
-  apiAuthed('/api/admin/activity').then(d => {
-    const tb = document.querySelector('#adminActivityBody');
-    if (!tb) return;
-    const acts = d.activity || [];
-    if (!acts.length) { tb.innerHTML = '<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">No activity recorded yet.</td></tr>'; return; }
-    tb.innerHTML = acts.map(a => {
-      const actor = a.actor || 'System';
-      const initials = actor === 'System' ? I.cpu(15) : actor.split(/[ @]/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
-      return `<tr>
-        <td><div style="display:flex;align-items:center;gap:10px"><span class="avatar" style="width:30px;height:30px;font-size:11px;background:${actor === 'System' ? 'var(--muted-foreground)' : 'var(--primary)'}">${initials}</span><span style="font-weight:600;font-size:13px">${actor}</span></div></td>
-        <td style="font-size:13px">${a.action || ''} <b style="color:var(--primary)">${a.target || ''}</b></td>
-        <td><span style="width:8px;height:8px;border-radius:999px;display:inline-block;background:var(--${lvl(a.level)})"></span></td>
-        <td class="cell-mono muted" style="font-size:12px">${(a.created_at || '').slice(0, 19)}</td>
-        <td class="cell-mono muted" style="font-size:12px">${a.ip || '\u2014'}</td></tr>`;
-    }).join('');
-  }).catch(() => {});
+  let ACTS = [
+    { actor: 'David Chen', action: 'completed', target: 'order AP-10427', level: 'success', created_at: 'Jun 20, 11:24:02', ip: '198.51.100.4' },
+    { actor: 'System', action: 'auto-refunded', target: 'order AP-10424', level: 'warning', created_at: 'Jun 20, 11:09:30', ip: '\u2014' },
+    { actor: 'Priya Nair', action: 'replied to', target: 'ticket #4821', level: 'info', created_at: 'Jun 20, 10:52:18', ip: '203.0.113.9' },
+    { actor: 'Alicia Moreno', action: 'updated pricing for', target: 'Carrier Unlock', level: 'info', created_at: 'Jun 20, 10:14:55', ip: '198.51.100.7' },
+    { actor: 'System', action: 'webhook delivery failed', target: 'evt_9f20', level: 'danger', created_at: 'Jun 20, 10:01:12', ip: '\u2014' },
+    { actor: 'Marco Rossi', action: 'login attempt blocked', target: 'reseller account', level: 'danger', created_at: 'Jun 20, 09:44:30', ip: '192.0.2.55' },
+    { actor: 'David Chen', action: 'verified IMEI', target: '356789104253871', level: 'success', created_at: 'Jun 20, 09:15:08', ip: '198.51.100.4' },
+  ];
+  let filter = 'All';
+
+  function rowHTML(a) {
+    const actor = a.actor || 'System';
+    const initials = actor === 'System' ? I.cpu(15) : actor.split(/[ @]/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
+    return `<tr>
+      <td><div style="display:flex;align-items:center;gap:10px"><span class="avatar" style="width:30px;height:30px;font-size:11px;background:${actor === 'System' ? 'var(--muted-foreground)' : 'var(--primary)'}">${initials}</span><span style="font-weight:600;font-size:13px">${actor}</span></div></td>
+      <td style="font-size:13px">${a.action || ''} <b style="color:var(--primary)">${a.target || ''}</b></td>
+      <td><span style="width:8px;height:8px;border-radius:999px;display:inline-block;background:var(--${lvl(a.level)})"></span></td>
+      <td class="cell-mono muted" style="font-size:12px">${(a.created_at || '').toString().slice(0, 19)}</td><td class="cell-mono muted" style="font-size:12px">${a.ip || '\u2014'}</td></tr>`;
+  }
+  function filtered() {
+    if (filter === 'Users') return ACTS.filter(a => (a.actor || '') !== 'System');
+    if (filter === 'System') return ACTS.filter(a => (a.actor || '') === 'System');
+    if (filter === 'Security') return ACTS.filter(a => a.level === 'danger' || a.level === 'warning');
+    return ACTS;
+  }
+  function draw() { mountPager($('#adminActivityBody'), filtered(), rowHTML, 12); }
+
+  const fc = $('#actFilter');
+  if (fc) $$('button', fc).forEach(btn => btn.addEventListener('click', () => {
+    $$('button', fc).forEach(x => x.classList.remove('active')); btn.classList.add('active');
+    filter = btn.dataset.f || 'All'; draw();
+  }));
+  if ($('#actExport')) $('#actExport').addEventListener('click', () => {
+    exportCSV('activity.csv', ['Actor', 'Action', 'Target', 'Level', 'Timestamp', 'IP'], filtered().map(a => [a.actor, a.action, a.target, a.level, a.created_at, a.ip]));
+  });
+
+  draw();
+
+  if (CONFIG.apiBase && getToken()) {
+    apiAuthed('/api/admin/activity').then(d => {
+      const acts = (d && d.activity) || [];
+      if (acts.length) { ACTS = acts; draw(); }
+    }).catch(() => {});
+  }
 };
 
 /* ============================================================

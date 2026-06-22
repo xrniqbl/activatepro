@@ -47,6 +47,7 @@ try {
   const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
   if (!cols.includes('role')) db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
   if (!cols.includes('whatsapp')) db.exec("ALTER TABLE users ADD COLUMN whatsapp TEXT");
+  if (!cols.includes('status')) db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'Active'");
 } catch (e) { console.warn('users migration skipped:', e.message); }
 
 /* ---------- Users ---------- */
@@ -99,7 +100,7 @@ function updateWhatsapp(id, whatsapp) { _updateWhatsapp.run(whatsapp || null, id
 function setRole(email, role) { _setRole.run(role, email); }
 
 /* ---------- Admin queries ---------- */
-const _allUsers = db.prepare('SELECT id, email, name, verified, role, created_at FROM users ORDER BY created_at DESC');
+const _allUsers = db.prepare('SELECT id, email, name, verified, role, status, created_at FROM users ORDER BY created_at DESC');
 const _allOrders = db.prepare(`SELECT o.*, u.email AS user_email, u.name AS user_name
   FROM orders o LEFT JOIN users u ON u.id = o.user_id ORDER BY o.created_at DESC`);
 function listAllUsers() { return _allUsers.all(); }
